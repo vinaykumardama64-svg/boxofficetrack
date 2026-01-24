@@ -65,7 +65,7 @@ function App() {
   };
 
   const fetchData = async () => {
-    let query = supabase.from("box_office_data").select("*").limit(135000);
+    let query = supabase.from("box_office_data").select("*").limit(99000);
 
     if (selectedMovies.length > 0) {
       const baseTitles = selectedMovies.map((s) => s.value.replace(/\s*\(.*?\)$/, ""));
