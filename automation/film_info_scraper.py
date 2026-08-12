@@ -25,7 +25,7 @@ Usage (Windows cmd.exe):
   py film_info_scraper.py --from 2021-12-10 --to today --out-dir "%OUT%" --out-prefix "weekly_all" --max-weeks 20
 """
 
-import re, os, sys, time, random, argparse, datetime as dt
+import re, os, sys, time, random, argparse, datetime as dt, glob
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, Dict, Iterable
 from urllib.parse import urlsplit, urlunsplit
@@ -611,13 +611,58 @@ def normalize_movie_title_for_total(title: str) -> str:
 
     return t.lower()
 
-def harvest(date_from: dt.date, date_to: dt.date) -> pd.DataFrame:
+RAW_COLUMNS = [
+    "movie",
+    "city",
+    "cinemas_reported",
+    "gross_reported",
+    "week_start",
+    "week_end",
+    "update_date",
+    "opened_on_dom",
+    "source_url",
+]
+
+def harvest_raw(
+    date_from: dt.date,
+    date_to: dt.date,
+    partition_by_week_start: bool = False,
+) -> pd.DataFrame:
+    """
+    Fetch and parse FilmInformation rows only.
+
+    No week numbering, release-year calculation, cumulative calculation,
+    wide pivot, or Turso synchronization happens here.
+
+    partition_by_week_start=True is used by parallel GitHub jobs so that
+    a collection week crossing Dec/Jan belongs to exactly one partition:
+    the partition containing that week's Friday/week_start.
+    """
     weeks = discover_weeks(date_from, date_to)
+
+    if partition_by_week_start:
+        weeks = [
+            wm for wm in weeks
+            if date_from <= wm.week_start <= date_to
+        ]
+
+    print(
+        f"Raw scrape: {len(weeks)} FilmInformation weekly article(s) "
+        f"for {date_from} -> {date_to}"
+    )
+
     rows = []
-    for wm in weeks:
+
+    for idx, wm in enumerate(weeks, start=1):
+        print(
+            f"[{idx}/{len(weeks)}] "
+            f"{wm.week_start} -> {wm.week_end} | {wm.url}"
+        )
+
         html = fetch_html(wm.url)
         blocks = parse_week_article(html)
         blocks = apply_special_city_splits(blocks)
+
         for b in blocks:
             rows.append({
                 "movie": b.movie,
@@ -628,13 +673,82 @@ def harvest(date_from: dt.date, date_to: dt.date) -> pd.DataFrame:
                 "week_end": wm.week_end,
                 "update_date": wm.update_date,
                 "opened_on_dom": b.opened_on_dom,
+                "source_url": wm.url,
             })
-    df = pd.DataFrame(rows)
-    if df.empty:
-        return df
 
-    # Week numbering per movie (unique weeks per movie)
-    keys = df[["movie", "week_end"]].drop_duplicates().sort_values(["movie", "week_end"])
+    return pd.DataFrame(rows, columns=RAW_COLUMNS)
+
+
+def finalize_raw(raw_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply the ORIGINAL full-history business logic to one globally merged
+    raw dataframe.
+
+    This is intentionally done only after all parallel scrape partitions
+    have been combined. Therefore:
+      - week_number is global across the complete history,
+      - release_year is based on the true first appearance,
+      - cumulative totals span year boundaries correctly,
+      - dubbed/base-title movie totals remain global.
+    """
+    if raw_df is None or raw_df.empty:
+        return pd.DataFrame()
+
+    df = raw_df.copy()
+
+    required = {
+        "movie",
+        "city",
+        "cinemas_reported",
+        "gross_reported",
+        "week_start",
+        "week_end",
+        "update_date",
+        "opened_on_dom",
+    }
+
+    missing = required - set(df.columns)
+    if missing:
+        raise RuntimeError(
+            "Raw dataframe is missing required column(s): "
+            + ", ".join(sorted(missing))
+        )
+
+    # Normalize raw values after CSV artifact round-trips.
+    df["movie"] = df["movie"].fillna("").astype(str).map(norm_space)
+    df["city"] = df["city"].fillna("Unknown").astype(str).map(norm_space)
+    df.loc[df["city"].eq(""), "city"] = "Unknown"
+
+    df["cinemas_reported"] = pd.to_numeric(
+        df["cinemas_reported"], errors="coerce"
+    )
+    df["gross_reported"] = pd.to_numeric(
+        df["gross_reported"], errors="coerce"
+    )
+    df["opened_on_dom"] = pd.to_numeric(
+        df["opened_on_dom"], errors="coerce"
+    )
+
+    for c in ["week_start", "week_end", "update_date"]:
+        df[c] = pd.to_datetime(df[c], errors="coerce").dt.date
+
+    bad_dates = df["week_start"].isna() | df["week_end"].isna()
+    if bad_dates.any():
+        examples = df.loc[
+            bad_dates,
+            ["movie", "city", "week_start", "week_end"]
+        ].head(10)
+        raise RuntimeError(
+            "Some merged raw rows contain invalid week dates. Examples:\n"
+            + examples.to_string(index=False)
+        )
+
+    # Week numbering per movie (unique weeks per movie) — same original logic.
+    keys = (
+        df[["movie", "week_end"]]
+        .drop_duplicates()
+        .sort_values(["movie", "week_end"])
+    )
     keys["week_number"] = keys.groupby("movie").cumcount() + 1
     df = df.merge(keys, on=["movie", "week_end"], how="left")
 
@@ -643,42 +757,168 @@ def harvest(date_from: dt.date, date_to: dt.date) -> pd.DataFrame:
     # Use movie_total_key so language/dubbed versions of the same
     # base title get the same release year.
     # ------------------------------------------------------------
-    df["movie_total_key"] = df["movie"].apply(normalize_movie_title_for_total)
+    df["movie_total_key"] = df["movie"].apply(
+        normalize_movie_title_for_total
+    )
 
     release_years = (
         df.groupby("movie_total_key", as_index=False)["week_start"]
           .min()
           .rename(columns={"week_start": "first_appearance_week_start"})
     )
-    release_years["release_year"] = release_years["first_appearance_week_start"].apply(
-        lambda x: x.year if isinstance(x, dt.date) else pd.NA
-    ).astype("Int64")
+
+    release_years["release_year"] = (
+        release_years["first_appearance_week_start"]
+        .apply(lambda x: x.year if isinstance(x, dt.date) else pd.NA)
+        .astype("Int64")
+    )
 
     df = df.merge(
         release_years[["movie_total_key", "release_year"]],
         on="movie_total_key",
-        how="left"
+        how="left",
     )
 
-    # Computed fields (×1.18)
-    df["adj_gross"] = (df["gross_reported"].fillna(0).astype(float) * 1.18).round()
-    df = df.sort_values(["movie","city","week_number","week_end"])
-    df["cummulative gross"] = (
-        df.groupby(["movie","city"])["adj_gross"].cumsum().astype("Int64")
+    # Computed fields (×1.18) — same original logic.
+    df["adj_gross"] = (
+        df["gross_reported"]
+        .fillna(0)
+        .astype(float)
+        .mul(1.18)
+        .round()
     )
+
+    df = df.sort_values(
+        ["movie", "city", "week_number", "week_end"]
+    )
+
+    df["cummulative gross"] = (
+        df.groupby(["movie", "city"])["adj_gross"]
+          .cumsum()
+          .astype("Int64")
+    )
+
     df["total gross"] = (
-        df.groupby(["movie","city"])["adj_gross"].transform("sum").astype("Int64")
+        df.groupby(["movie", "city"])["adj_gross"]
+          .transform("sum")
+          .astype("Int64")
     )
 
     df["movie total gross"] = (
-        df.groupby(["movie_total_key"])["adj_gross"].transform("sum").astype("Int64")
+        df.groupby(["movie_total_key"])["adj_gross"]
+          .transform("sum")
+          .astype("Int64")
     )
 
-    # Normalize dates to strings
+    # Normalize dates to strings exactly as the original output expects.
     for c in ["week_start", "week_end", "update_date"]:
-        df[c] = pd.to_datetime(df[c], errors="coerce").dt.strftime("%Y-%m-%d")
+        df[c] = pd.to_datetime(
+            df[c], errors="coerce"
+        ).dt.strftime("%Y-%m-%d")
 
     return df
+
+
+def harvest(date_from: dt.date, date_to: dt.date) -> pd.DataFrame:
+    """
+    Original single-job/full-history behavior retained.
+
+    Existing manual/local commands continue to work exactly through this path.
+    """
+    raw_df = harvest_raw(
+        date_from,
+        date_to,
+        partition_by_week_start=False,
+    )
+    return finalize_raw(raw_df)
+
+
+def load_parallel_raw_parts(raw_dir: str) -> pd.DataFrame:
+    """
+    Load raw CSV artifacts produced by parallel GitHub jobs.
+
+    Each parallel partition owns weeks by week_start, so year-boundary weeks
+    are not intentionally duplicated. source_url is additionally used as a
+    safety guard if the same weekly article somehow appears in two artifacts.
+    """
+    pattern = os.path.join(raw_dir, "*_raw.csv")
+    files = sorted(glob.glob(pattern))
+
+    if not files:
+        raise RuntimeError(
+            f"No *_raw.csv files found in merge directory: {raw_dir}"
+        )
+
+    print(f"Merge mode: found {len(files)} raw artifact file(s).")
+
+    frames = []
+    seen_source_urls = set()
+
+    for path in files:
+        frame = pd.read_csv(path)
+
+        print(
+            f"  Reading {os.path.basename(path)}: "
+            f"{len(frame)} raw row(s)"
+        )
+
+        if frame.empty:
+            continue
+
+        if "source_url" in frame.columns:
+            frame["source_url"] = (
+                frame["source_url"]
+                .fillna("")
+                .astype(str)
+                .map(normalize_url)
+            )
+
+            # Remove only whole weekly articles already supplied by an
+            # earlier artifact. We do NOT drop duplicate rows within one
+            # article, preserving the existing parser/counting behavior.
+            duplicate_source_mask = (
+                frame["source_url"].ne("")
+                & frame["source_url"].isin(seen_source_urls)
+            )
+
+            if duplicate_source_mask.any():
+                duplicate_urls = sorted(
+                    frame.loc[
+                        duplicate_source_mask,
+                        "source_url",
+                    ].unique()
+                )
+                print(
+                    "  Safety de-dup: skipping "
+                    f"{len(duplicate_urls)} weekly article(s) "
+                    "already supplied by another partition."
+                )
+                frame = frame.loc[
+                    ~frame["source_url"].isin(duplicate_urls)
+                ].copy()
+
+            seen_source_urls.update(
+                u for u in frame["source_url"].unique()
+                if u
+            )
+
+        frames.append(frame)
+
+    if not frames:
+        return pd.DataFrame()
+
+    merged = pd.concat(
+        frames,
+        ignore_index=True,
+        sort=False,
+    )
+
+    print(
+        f"Merged raw history: {len(merged)} row(s) "
+        f"from {len(frames)} non-empty artifact(s)."
+    )
+
+    return merged
 
 # ----------------------------
 # Thursday-opening detection from text
@@ -1130,44 +1370,191 @@ def parse_cli_date(s: str) -> dt.date:
     return dt.date.fromisoformat(s)
 
 def main():
-    ap = argparse.ArgumentParser(description="FilmInformation Weekly Collections → wide & detail CSVs")
-    ap.add_argument("--from", dest="date_from", default="2021-12-10",
-                    help="Start date inclusive, YYYY-MM-DD or 'today'")
-    ap.add_argument("--to", dest="date_to", default="today",
-                    help="End date inclusive, YYYY-MM-DD or 'today'")
-    ap.add_argument("--out-dir", default=".", help="Directory to save outputs")
-    ap.add_argument("--out-prefix", default="weekly_history", help="Output filename prefix (no path)")
-    ap.add_argument("--max-weeks", type=int, default=20,
-                    help="Maximum number of Week columns to display in the wide sheet (default: 20)")
-    ap.add_argument("--turso-table", default=TURSO_TABLE,
-                    help="Turso destination table (default: TURSO_TABLE env var or film_collection_wide)")
-    ap.add_argument("--skip-turso", action="store_true",
-                    help="Create CSVs only; do not publish to Turso")
+    ap = argparse.ArgumentParser(
+        description="FilmInformation Weekly Collections → wide & detail CSVs"
+    )
+
+    ap.add_argument(
+        "--from",
+        dest="date_from",
+        default="2021-12-10",
+        help="Start date inclusive, YYYY-MM-DD or 'today'",
+    )
+    ap.add_argument(
+        "--to",
+        dest="date_to",
+        default="today",
+        help="End date inclusive, YYYY-MM-DD or 'today'",
+    )
+    ap.add_argument(
+        "--out-dir",
+        default=".",
+        help="Directory to save outputs",
+    )
+    ap.add_argument(
+        "--out-prefix",
+        default="weekly_history",
+        help="Output filename prefix (no path)",
+    )
+    ap.add_argument(
+        "--max-weeks",
+        type=int,
+        default=20,
+        help="Maximum number of Week columns to display in the wide sheet (default: 20)",
+    )
+    ap.add_argument(
+        "--turso-table",
+        default=TURSO_TABLE,
+        help="Turso destination table (default: TURSO_TABLE env var or film_collection_wide)",
+    )
+    ap.add_argument(
+        "--skip-turso",
+        action="store_true",
+        help="Create CSVs only; do not publish to Turso",
+    )
+
+    # --------------------------------------------------------
+    # Parallel GitHub Actions modes
+    # --------------------------------------------------------
+    ap.add_argument(
+        "--raw-only",
+        action="store_true",
+        help=(
+            "Scrape only raw FilmInformation rows for the requested "
+            "date partition. No week numbering, totals, wide file, or "
+            "Turso synchronization is performed."
+        ),
+    )
+
+    ap.add_argument(
+        "--merge-raw-dir",
+        default="",
+        help=(
+            "Directory containing *_raw.csv artifacts from parallel "
+            "scrape jobs. Combines all parts, runs the original global "
+            "calculations once, creates final CSVs, and optionally syncs Turso."
+        ),
+    )
+
     args = ap.parse_args()
+
+    if args.raw_only and args.merge_raw_dir:
+        raise RuntimeError(
+            "--raw-only and --merge-raw-dir cannot be used together."
+        )
 
     date_from = parse_cli_date(args.date_from)
     date_to = parse_cli_date(args.date_to)
 
     os.makedirs(args.out_dir, exist_ok=True)
-    wide_csv   = os.path.join(args.out_dir, f"{args.out_prefix}_wide_city_movie_totals_weeks.csv")
-    detail_csv = os.path.join(args.out_dir, f"{args.out_prefix}_detail_city_movie_totals_weeks.csv")
 
-    df = harvest(date_from, date_to)
+    wide_csv = os.path.join(
+        args.out_dir,
+        f"{args.out_prefix}_wide_city_movie_totals_weeks.csv",
+    )
+    detail_csv = os.path.join(
+        args.out_dir,
+        f"{args.out_prefix}_detail_city_movie_totals_weeks.csv",
+    )
+    raw_csv = os.path.join(
+        args.out_dir,
+        f"{args.out_prefix}_raw.csv",
+    )
+
+    # ========================================================
+    # MODE 1: Parallel scrape partition
+    # ========================================================
+    if args.raw_only:
+        raw_df = harvest_raw(
+            date_from,
+            date_to,
+            partition_by_week_start=True,
+        )
+
+        if raw_df.empty:
+            print(
+                f"No raw data parsed for partition "
+                f"{date_from} -> {date_to}."
+            )
+        else:
+            raw_df.to_csv(raw_csv, index=False)
+
+        print("Raw partition completed.")
+        print(f"- {raw_csv}")
+        print(f"Raw rows: {len(raw_df)}")
+        return
+
+    # ========================================================
+    # MODE 2: Merge artifacts then run ORIGINAL global logic
+    # ========================================================
+    if args.merge_raw_dir:
+        raw_df = load_parallel_raw_parts(
+            args.merge_raw_dir
+        )
+
+        if raw_df.empty:
+            raise RuntimeError(
+                "Parallel raw artifacts were found, but they "
+                "contained no usable rows."
+            )
+
+        df = finalize_raw(raw_df)
+
+    # ========================================================
+    # MODE 3: Original full-history/single-job behavior
+    # ========================================================
+    else:
+        df = harvest(
+            date_from,
+            date_to,
+        )
+
     if df.empty:
         print("No data parsed in the given range.")
         return
 
+    # --------------------------------------------------------
+    # Existing final outputs remain unchanged.
+    # --------------------------------------------------------
     df_detail = df.copy()
+
     df_detail = df_detail[[
-        "movie","release_year","city","cinemas_reported","gross_reported","week_start","week_end","update_date",
-        "week_number","cummulative gross","total gross","movie total gross"
+        "movie",
+        "release_year",
+        "city",
+        "cinemas_reported",
+        "gross_reported",
+        "week_start",
+        "week_end",
+        "update_date",
+        "week_number",
+        "cummulative gross",
+        "total gross",
+        "movie total gross",
     ]]
-    df_detail.to_csv(detail_csv, index=False)
 
-    thursday_map = build_thursday_flag_from_text(df)
-    df_wide = make_wide(df, thursday_map, max_weeks=args.max_weeks, force_day1_col=True)
-    df_wide.to_csv(wide_csv, index=False)
+    df_detail.to_csv(
+        detail_csv,
+        index=False,
+    )
 
+    thursday_map = build_thursday_flag_from_text(
+        df
+    )
+
+    df_wide = make_wide(
+        df,
+        thursday_map,
+        max_weeks=args.max_weeks,
+        force_day1_col=True,
+    )
+
+    df_wide.to_csv(
+        wide_csv,
+        index=False,
+    )
+
+    # Only this final/global job talks to Turso.
     if not args.skip_turso:
         publish_wide_to_turso(
             df_wide,
@@ -1178,7 +1565,10 @@ def main():
     print("Wrote:")
     print(f"- {detail_csv}")
     print(f"- {wide_csv}")
-    print(f"Movie×City groups: {len(df_wide)}; rows (detail): {len(df_detail)}")
+    print(
+        f"Movie×City groups: {len(df_wide)}; "
+        f"rows (detail): {len(df_detail)}"
+    )
 
 if __name__ == "__main__":
     main()
