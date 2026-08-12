@@ -236,6 +236,9 @@ const FILMINFO_CITY_STATE_MAP: Record<string, string> = {
   JAMMU: "Jammu and Kashmir",
   SRINAGAR: "Jammu and Kashmir",
 
+  // Goa
+  GOA: "Goa",
+
   // Puducherry
   PONDICHERRY: "Puducherry",
   PUDUCHERRY: "Puducherry",
@@ -418,6 +421,9 @@ const NORMAL_CITY_STATE_MAP: Record<string, string> = {
   // Uttarakhand
   dehradun: "Uttarakhand",
 
+  // Goa
+  goa: "Goa",
+
   // Puducherry
   pondicherry: "Puducherry",
   puducherry: "Puducherry",
@@ -547,21 +553,61 @@ function App() {
       setLoading(true);
       setError("");
 
-      const response = await fetch(API_URL);
+      // Netlify Functions should not return the entire Turso table
+      // in one huge JSON response. Fetch the full dataset safely
+      // in smaller pages and combine them in React.
+      const PAGE_SIZE = 1000;
 
-      if (!response.ok) {
-        throw new Error(
-          `Could not load box office data (${response.status})`
+      let currentPage = 1;
+      let hasMore = true;
+
+      const allRows: MovieData[] = [];
+
+      while (hasMore) {
+        const response = await fetch(
+          `${API_URL}?page=${currentPage}&limit=${PAGE_SIZE}`
         );
+
+        if (!response.ok) {
+          throw new Error(
+            `Could not load box office data (${response.status})`
+          );
+        }
+
+        const result = await response.json();
+
+        const pageRows: MovieData[] = Array.isArray(result)
+          ? result
+          : result.data || [];
+
+        allRows.push(...pageRows);
+
+        // Compatibility:
+        // New API returns pagination.hasMore.
+        // If an older response shape is ever returned, stop after
+        // a short page rather than looping forever.
+        if (result?.pagination) {
+          hasMore = Boolean(result.pagination.hasMore);
+        } else {
+          hasMore = pageRows.length === PAGE_SIZE;
+        }
+
+        console.log(
+          `Loaded API page ${currentPage}: ` +
+          `${pageRows.length} rows; running total ${allRows.length}`
+        );
+
+        currentPage += 1;
+
+        // Safety guard against an accidental endless API loop.
+        if (currentPage > 500) {
+          throw new Error(
+            "Too many API pages requested. Pagination may be misconfigured."
+          );
+        }
       }
 
-      const result = await response.json();
-
-      const rawRows: MovieData[] = Array.isArray(result)
-        ? result
-        : result.data || [];
-
-      const rows: MovieData[] = rawRows.map((row) => ({
+      const rows: MovieData[] = allRows.map((row) => ({
         ...row,
         state: getStateFromCity(row.city),
       }));
