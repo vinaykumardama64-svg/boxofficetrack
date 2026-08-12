@@ -24,16 +24,18 @@ export default async () => {
       ORDER BY movie_total_gross DESC
     `);
 
-    const result = await stmt.all();
+    // IMPORTANT:
+    // stmt.all() itself returns the array of rows.
+    const rows = await stmt.all();
 
     console.log(
-      `Successfully fetched ${result.rows.length} rows from Turso`
+      `Successfully fetched ${rows.length} rows from Turso`
     );
 
     return new Response(
       JSON.stringify({
-        data: result.rows,
-        count: result.rows.length,
+        data: rows,
+        count: rows.length,
       }),
       {
         status: 200,
