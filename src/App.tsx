@@ -18,10 +18,8 @@ interface MovieData {
   release_year: number;
 
   day_1_gross?: number | null;
-
   total_gross?: number | null;
   movie_total_gross?: number | null;
-  cume_total?: number | null;
 
   [key: string]: string | number | null | undefined;
 }
@@ -51,8 +49,12 @@ function App() {
   const [page, setPage] = useState(1);
   const itemsPerPage = 25;
 
-  const [sortColumn, setSortColumn] = useState<string>("");
-  const [sortAsc, setSortAsc] = useState(true);
+  const [sortColumn, setSortColumn] = useState<string>("movie_total_gross");
+  const [sortAsc, setSortAsc] = useState(false);
+
+  // ------------------------------------------------------------
+  // Formatting
+  // ------------------------------------------------------------
 
   const toIndianFormat = (num?: number | null) => {
     const value = Number(num || 0);
@@ -65,6 +67,10 @@ function App() {
   const toCrores = (num?: number | null) => {
     return `${(Number(num || 0) / 10000000).toFixed(2)} Cr`;
   };
+
+  // ------------------------------------------------------------
+  // Fetch
+  // ------------------------------------------------------------
 
   const fetchData = async () => {
     try {
@@ -131,6 +137,10 @@ function App() {
     fetchData();
   }, []);
 
+  // ------------------------------------------------------------
+  // Dynamic Week 1 ... Week 20
+  // ------------------------------------------------------------
+
   const weekColumns = useMemo(() => {
     const cols = new Set<string>();
 
@@ -154,6 +164,16 @@ function App() {
     });
   }, [data]);
 
+  // ------------------------------------------------------------
+  // Dynamic Cumulative columns
+  // cume_d1
+  // cume_d1_plus_w1
+  // cume_d1_plus_w1_plus_w2
+  // ...
+  //
+  // cume_total is intentionally excluded.
+  // ------------------------------------------------------------
+
   const cumulativeColumns = useMemo(() => {
     const cols = new Set<string>();
 
@@ -170,7 +190,9 @@ function App() {
 
     return [...cols].sort((a, b) => {
       const getDepth = (value: string) => {
-        if (value === "cume_d1") return 0;
+        if (value === "cume_d1") {
+          return 0;
+        }
 
         const matches = value.match(/_plus_w\d+/g);
 
@@ -181,14 +203,14 @@ function App() {
     });
   }, [data]);
 
+  // ------------------------------------------------------------
+  // Display names
+  // ------------------------------------------------------------
+
   const formatColumnName = (column: string) => {
     if (column === "movie_title") return "Movie";
     if (column === "city") return "City";
     if (column === "release_year") return "Release Year";
-
-    if (column === "cume_total") {
-      return "Total Cumulative Gross";
-    }
 
     if (column === "movie_total_gross") {
       return "Movie Total Gross";
@@ -207,7 +229,7 @@ function App() {
     }
 
     if (column.startsWith("cume_")) {
-      let label = column
+      const label = column
         .replace("cume_", "")
         .replaceAll("_plus_", "+")
         .replaceAll("_", " ")
@@ -218,6 +240,10 @@ function App() {
 
     return column;
   };
+
+  // ------------------------------------------------------------
+  // Filtering
+  // ------------------------------------------------------------
 
   const filteredData = useMemo(() => {
     const searchText = search.toLowerCase().trim();
@@ -275,16 +301,15 @@ function App() {
     selectedYears,
   ]);
 
+  // ------------------------------------------------------------
+  // GLOBAL sorting
+  //
+  // Entire filtered dataset is sorted first.
+  // Pagination happens only afterward.
+  // ------------------------------------------------------------
+
   const sortedData = useMemo(() => {
     const output = [...filteredData];
-
-    if (!sortColumn) {
-      return output.sort(
-        (a, b) =>
-          Number(b.movie_total_gross || 0) -
-          Number(a.movie_total_gross || 0)
-      );
-    }
 
     output.sort((a, b) => {
       const aValue = a[sortColumn];
@@ -309,16 +334,36 @@ function App() {
     });
 
     return output;
-  }, [filteredData, sortColumn, sortAsc]);
+  }, [
+    filteredData,
+    sortColumn,
+    sortAsc,
+  ]);
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
-      setSortAsc(!sortAsc);
+      setSortAsc((current) => !current);
     } else {
       setSortColumn(column);
-      setSortAsc(false);
+
+      if (
+        column === "movie_title" ||
+        column === "city"
+      ) {
+        setSortAsc(true);
+      } else {
+        // Gross / year columns start highest → lowest.
+        setSortAsc(false);
+      }
     }
+
+    // Always show the beginning of the globally sorted result.
+    setPage(1);
   };
+
+  // ------------------------------------------------------------
+  // Reset page after filters/search
+  // ------------------------------------------------------------
 
   useEffect(() => {
     setPage(1);
@@ -328,6 +373,10 @@ function App() {
     selectedCities,
     selectedYears,
   ]);
+
+  // ------------------------------------------------------------
+  // Pagination AFTER sorting
+  // ------------------------------------------------------------
 
   const totalPages = Math.max(
     1,
@@ -339,23 +388,57 @@ function App() {
     page * itemsPerPage
   );
 
-  const totalCumulativeGross = sortedData.reduce(
-    (sum, row) =>
-      sum + Number(row.cume_total || row.total_gross || 0),
-    0
-  );
+  // ------------------------------------------------------------
+  // KPI
+  // ------------------------------------------------------------
 
-  const totalDay1 = sortedData.reduce(
+  /*
+    Movie Total Gross is repeated for every city belonging
+    to the same movie.
+
+    Therefore we should NOT simply sum movie_total_gross
+    across all city rows.
+
+    Take one movie_total_gross per Movie + Release Year.
+  */
+
+  const uniqueMovieTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+
+    filteredData.forEach((row) => {
+      const key =
+        `${row.movie_title}__${row.release_year}`;
+
+      const value = Number(
+        row.movie_total_gross || 0
+      );
+
+      if (!totals.has(key)) {
+        totals.set(key, value);
+      }
+    });
+
+    return [...totals.values()].reduce(
+      (sum, value) => sum + value,
+      0
+    );
+  }, [filteredData]);
+
+  const totalDay1 = filteredData.reduce(
     (sum, row) =>
       sum + Number(row.day_1_gross || 0),
     0
   );
 
-  const totalWeek1 = sortedData.reduce(
+  const totalWeek1 = filteredData.reduce(
     (sum, row) =>
       sum + Number(row.week_1 || 0),
     0
   );
+
+  // ------------------------------------------------------------
+  // One row per movie for chart
+  // ------------------------------------------------------------
 
   const groupedMovies = useMemo(() => {
     const result: Record<
@@ -364,31 +447,22 @@ function App() {
         movie: string;
         releaseYear: number;
         total: number;
-        day1: number;
-        week1: number;
       }
     > = {};
 
     filteredData.forEach((row) => {
-      const key = `${row.movie_title}__${row.release_year}`;
+      const key =
+        `${row.movie_title}__${row.release_year}`;
 
       if (!result[key]) {
         result[key] = {
           movie: row.movie_title,
           releaseYear: Number(row.release_year),
-          total: Number(row.movie_total_gross || 0),
-          day1: 0,
-          week1: 0,
+          total: Number(
+            row.movie_total_gross || 0
+          ),
         };
       }
-
-      result[key].day1 += Number(
-        row.day_1_gross || 0
-      );
-
-      result[key].week1 += Number(
-        row.week_1 || 0
-      );
     });
 
     return Object.values(result)
@@ -396,17 +470,27 @@ function App() {
       .slice(0, 20);
   }, [filteredData]);
 
+  // ------------------------------------------------------------
+  // Loading
+  // ------------------------------------------------------------
+
   if (loading) {
     return (
       <div className="App">
         <h1>🎬 BoxOfficeTrack</h1>
-        <div className="spinner"></div>
+
+        <div className="spinner" />
+
         <p style={{ textAlign: "center" }}>
           Loading box office data...
         </p>
       </div>
     );
   }
+
+  // ------------------------------------------------------------
+  // Error
+  // ------------------------------------------------------------
 
   if (error) {
     return (
@@ -424,19 +508,31 @@ function App() {
     );
   }
 
+  // ------------------------------------------------------------
+  // UI
+  // ------------------------------------------------------------
+
   return (
     <div className="App">
+
       <h1>🎬 BoxOfficeTrack</h1>
+
+      {/* Search */}
 
       <input
         type="text"
         placeholder="Search movie / city / release year..."
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        onChange={(e) =>
+          setSearch(e.target.value)
+        }
         className="search-input"
       />
 
+      {/* Filters */}
+
       <div className="filters">
+
         <Select
           isMulti
           options={movies.map((movie) => ({
@@ -481,18 +577,22 @@ function App() {
           }
           placeholder="Release Year"
         />
+
       </div>
 
+      {/* KPI */}
+
       <div className="kpi-container">
+
         <div className="kpi-card">
-          <h3>Total Cumulative Gross</h3>
+          <h3>Movie Total Gross</h3>
 
           <p>
-            ₹{toIndianFormat(totalCumulativeGross)}
+            ₹{toIndianFormat(uniqueMovieTotals)}
           </p>
 
           <small>
-            ₹{toCrores(totalCumulativeGross)}
+            ₹{toCrores(uniqueMovieTotals)}
           </small>
         </div>
 
@@ -517,7 +617,10 @@ function App() {
 
           <p>{sortedData.length}</p>
         </div>
+
       </div>
+
+      {/* Main Table */}
 
       <h2
         style={{
@@ -529,14 +632,17 @@ function App() {
       </h2>
 
       <div
+        className="table-scroll"
         style={{
           width: "100%",
           overflowX: "auto",
         }}
       >
         <table>
+
           <thead>
             <tr>
+
               <th
                 onClick={() =>
                   handleSort("movie_title")
@@ -561,24 +667,34 @@ function App() {
                 Release Year
               </th>
 
+              {/* First gross column */}
+
               <th
                 onClick={() =>
-                  handleSort("cume_total")
+                  handleSort(
+                    "movie_total_gross"
+                  )
                 }
               >
-                Total Cumulative Gross
+                Movie Total Gross
               </th>
 
-              {cumulativeColumns.map((column) => (
-                <th
-                  key={column}
-                  onClick={() =>
-                    handleSort(column)
-                  }
-                >
-                  {formatColumnName(column)}
-                </th>
-              ))}
+              {/* Cumulative progression */}
+
+              {cumulativeColumns.map(
+                (column) => (
+                  <th
+                    key={column}
+                    onClick={() =>
+                      handleSort(column)
+                    }
+                  >
+                    {formatColumnName(column)}
+                  </th>
+                )
+              )}
+
+              {/* Day 1 */}
 
               <th
                 onClick={() =>
@@ -588,16 +704,22 @@ function App() {
                 Day 1
               </th>
 
-              {weekColumns.map((column) => (
-                <th
-                  key={column}
-                  onClick={() =>
-                    handleSort(column)
-                  }
-                >
-                  {formatColumnName(column)}
-                </th>
-              ))}
+              {/* Week 1 ... Week 20 */}
+
+              {weekColumns.map(
+                (column) => (
+                  <th
+                    key={column}
+                    onClick={() =>
+                      handleSort(column)
+                    }
+                  >
+                    {formatColumnName(column)}
+                  </th>
+                )
+              )}
+
+              {/* City total */}
 
               <th
                 onClick={() =>
@@ -607,101 +729,102 @@ function App() {
                 City Total Gross
               </th>
 
-              <th
-                onClick={() =>
-                  handleSort("movie_total_gross")
-                }
-              >
-                Movie Total Gross
-              </th>
             </tr>
           </thead>
 
           <tbody>
-            {paginatedData.map((row, index) => (
-              <tr
-                key={`${row.movie_title}-${row.release_year}-${row.city}-${index}`}
-              >
-                <td>{row.movie_title}</td>
 
-                <td>{row.city}</td>
+            {paginatedData.map(
+              (row, index) => (
+                <tr
+                  key={`${row.movie_title}-${row.release_year}-${row.city}-${index}`}
+                >
 
-                <td>{row.release_year}</td>
+                  <td className="movie-cell">
+                    {row.movie_title}
+                  </td>
 
-                <td>
-                  ₹
-                  {toIndianFormat(
-                    Number(
-                      row.cume_total ||
-                        row.total_gross ||
-                        0
-                    )
-                  )}
-                </td>
+                  <td>
+                    {row.city}
+                  </td>
 
-                {cumulativeColumns.map(
-                  (column) => (
-                    <td key={column}>
-                      ₹
-                      {toIndianFormat(
-                        Number(
-                          row[column] || 0
-                        )
-                      )}
-                    </td>
-                  )
-                )}
+                  <td>
+                    {row.release_year}
+                  </td>
 
-                <td>
-                  ₹
-                  {toIndianFormat(
-                    Number(
-                      row.day_1_gross || 0
-                    )
-                  )}
-                </td>
-
-                {weekColumns.map((column) => (
-                  <td key={column}>
+                  <td>
                     ₹
                     {toIndianFormat(
                       Number(
-                        row[column] || 0
+                        row.movie_total_gross ||
+                          0
                       )
                     )}
                   </td>
-                ))}
 
-                <td>
-                  ₹
-                  {toIndianFormat(
-                    Number(
-                      row.total_gross || 0
+                  {cumulativeColumns.map(
+                    (column) => (
+                      <td key={column}>
+                        ₹
+                        {toIndianFormat(
+                          Number(
+                            row[column] || 0
+                          )
+                        )}
+                      </td>
                     )
                   )}
-                </td>
 
-                <td>
-                  ₹
-                  {toIndianFormat(
-                    Number(
-                      row.movie_total_gross || 0
+                  <td>
+                    ₹
+                    {toIndianFormat(
+                      Number(
+                        row.day_1_gross || 0
+                      )
+                    )}
+                  </td>
+
+                  {weekColumns.map(
+                    (column) => (
+                      <td key={column}>
+                        ₹
+                        {toIndianFormat(
+                          Number(
+                            row[column] || 0
+                          )
+                        )}
+                      </td>
                     )
                   )}
-                </td>
-              </tr>
-            ))}
+
+                  <td>
+                    ₹
+                    {toIndianFormat(
+                      Number(
+                        row.total_gross || 0
+                      )
+                    )}
+                  </td>
+
+                </tr>
+              )
+            )}
+
           </tbody>
+
         </table>
       </div>
 
+      {/* Pagination */}
+
       {totalPages > 1 && (
         <div className="pagination">
+
           <button
             disabled={page === 1}
             onClick={() =>
-              setPage((p) =>
-                Math.max(p - 1, 1)
+              setPage((current) =>
+                Math.max(current - 1, 1)
               )
             }
           >
@@ -715,9 +838,9 @@ function App() {
           <button
             disabled={page >= totalPages}
             onClick={() =>
-              setPage((p) =>
+              setPage((current) =>
                 Math.min(
-                  p + 1,
+                  current + 1,
                   totalPages
                 )
               )
@@ -725,8 +848,11 @@ function App() {
           >
             Next
           </button>
+
         </div>
       )}
+
+      {/* Chart */}
 
       <h2
         style={{
@@ -753,22 +879,23 @@ function App() {
             margin={{
               top: 20,
               right: 100,
-              left: 130,
+              left: 150,
               bottom: 5,
             }}
           >
+
             <XAxis type="number" />
 
             <YAxis
               dataKey="movie"
               type="category"
-              width={170}
+              width={190}
             />
 
             <Tooltip
               formatter={(value: number) => [
                 `₹${toCrores(value)}`,
-                "",
+                "Movie Total Gross",
               ]}
             />
 
@@ -787,9 +914,11 @@ function App() {
                 }
               />
             </Bar>
+
           </BarChart>
         </ResponsiveContainer>
       </div>
+
     </div>
   );
 }
