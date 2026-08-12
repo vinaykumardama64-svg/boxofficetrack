@@ -1,6 +1,6 @@
 import { connect } from "@tursodatabase/serverless";
 
-export default async () => {
+export default async (request: Request) => {
   try {
     const url = process.env.TURSO_DATABASE_URL;
     const authToken = process.env.TURSO_AUTH_TOKEN;
@@ -18,35 +18,109 @@ export default async () => {
       authToken,
     });
 
+    // =========================================================
+    // PAGINATION
+    // =========================================================
+
+    const requestUrl = new URL(request.url);
+
+    const pageParam = Number(
+      requestUrl.searchParams.get("page") || "1"
+    );
+
+    const limitParam = Number(
+      requestUrl.searchParams.get("limit") || "1000"
+    );
+
+    const page =
+      Number.isFinite(pageParam) && pageParam > 0
+        ? Math.floor(pageParam)
+        : 1;
+
+    // Hard maximum protects Netlify response size.
+    const limit =
+      Number.isFinite(limitParam) && limitParam > 0
+        ? Math.min(Math.floor(limitParam), 1500)
+        : 1000;
+
+    const offset = (page - 1) * limit;
+
+    // =========================================================
+    // TOTAL ROW COUNT
+    // =========================================================
+
+    const countStmt = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM film_collection_wide
+    `);
+
+    const countRow = await countStmt.get();
+
+    const total = Number(
+      countRow?.total || 0
+    );
+
+    // =========================================================
+    // FETCH ONE PAGE
+    // =========================================================
+
     const stmt = db.prepare(`
       SELECT *
       FROM film_collection_wide
-      ORDER BY movie_total_gross DESC
+      ORDER BY movie_total_gross DESC,
+               movie_title ASC,
+               city ASC
+      LIMIT ?
+      OFFSET ?
     `);
 
-    // IMPORTANT:
-    // stmt.all() itself returns the array of rows.
-    const rows = await stmt.all();
+    const rows = await stmt.all([
+      limit,
+      offset,
+    ]);
+
+    const totalPages =
+      total === 0
+        ? 0
+        : Math.ceil(total / limit);
+
+    const hasMore =
+      page < totalPages;
 
     console.log(
-      `Successfully fetched ${rows.length} rows from Turso`
+      `BoxOffice page ${page}/${totalPages}: ` +
+      `${rows.length} rows, total ${total}`
     );
 
     return new Response(
       JSON.stringify({
         data: rows,
-        count: rows.length,
+
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasMore,
+        },
       }),
       {
         status: 200,
+
         headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "public, max-age=300",
+          "Content-Type":
+            "application/json; charset=utf-8",
+
+          "Cache-Control":
+            "public, max-age=300",
         },
       }
     );
   } catch (error) {
-    console.error("BOXOFFICE_FUNCTION_ERROR:", error);
+    console.error(
+      "BOXOFFICE_FUNCTION_ERROR:",
+      error
+    );
 
     return new Response(
       JSON.stringify({
@@ -57,8 +131,10 @@ export default async () => {
       }),
       {
         status: 500,
+
         headers: {
-          "Content-Type": "application/json",
+          "Content-Type":
+            "application/json; charset=utf-8",
         },
       }
     );
