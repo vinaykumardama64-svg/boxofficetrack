@@ -371,7 +371,7 @@ def _keep_qualifier(q: str) -> bool:
 
     # keep any bracket text that mentions a language or dubbed
     return bool(re.search(
-        r'\b(?:dubbed|telugu|tamil|kannada|malayalam|marathi|bengali|bhojpuri|gujarati|punjabi|odia|english|hindi)\b',
+        r'\b(?:dubbed|telugu|tamil|kannada|malayalam|marathi|bengali|bhojpuri|gujarati|punjabi|odia|english)\b',
         ql,
         flags=re.IGNORECASE
     ))
