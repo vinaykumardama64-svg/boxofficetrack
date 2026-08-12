@@ -273,7 +273,7 @@ function json(data: any, status = 200): Response {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=120",
+      "Cache-Control": "no-store",
     },
   });
 }
