@@ -15,7 +15,8 @@ Highlights:
 - Slug variants: with/without "-to-", AMP endings/params stripped.
 - Thursday Day-1 detection from “opened on …”.
 - Hindi-only cleanup for embedded "(Hindi)" and "(N shows)" in bold titles; keep non-Hindi qualifiers.
-- Hyderabad/Madras sub-city splits; 1.18× adjusted gross; wide cumulative columns.
+- Hyderabad/Madras/Visakhapatnam sub-city splits; 1.18× adjusted gross; wide cumulative columns.
+- Release year from first appearance; incremental synchronization to Turso.
 
 Usage (Windows cmd.exe):
   set OUT=%USERPROFILE%\Downloads\weekly_exports
@@ -54,16 +55,18 @@ REQ_TIMEOUT = 30
 MAX_PAGES_PER_SOURCE = 60
 
 # ----------------------------
-# Supabase publish config
+# Turso publish config
 # ----------------------------
-# Keep credentials OUT of this file. Set them as environment variables:
-#   SUPABASE_URL=https://xxxx.supabase.co
-#   SUPABASE_KEY=sb_secret_xxxxx   (or legacy service_role)
-#   SUPABASE_TABLE=film_collection_wide
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
-SUPABASE_TABLE = os.getenv("SUPABASE_TABLE", "film_collection_wide").strip()
-SUPABASE_BATCH_SIZE = 500
+# Keep credentials OUT of this file.
+# GitHub Actions will provide:
+#   TURSO_DATABASE_URL=libsql://...
+#   TURSO_AUTH_TOKEN=...
+# Optional:
+#   TURSO_TABLE=film_collection_wide
+TURSO_DATABASE_URL = os.getenv("TURSO_DATABASE_URL", "").strip()
+TURSO_AUTH_TOKEN = os.getenv("TURSO_AUTH_TOKEN", "").strip()
+TURSO_TABLE = os.getenv("TURSO_TABLE", "film_collection_wide").strip()
+TURSO_BATCH_SIZE = 500
 
 # ----------------------------
 # Networking helpers
@@ -840,75 +843,282 @@ def make_wide(df: pd.DataFrame, thursday_map: Dict[str, bool], max_weeks: int, f
     return wide
 
 # ----------------------------
-# Supabase publishing
+# Turso publishing
 # ----------------------------
-def supabase_safe_column_name(col: str) -> str:
-    """Convert CSV/display column names into stable Postgres-friendly names."""
+def turso_safe_column_name(col: str) -> str:
+    # Convert CSV/display column names into stable SQLite/Turso-friendly names.
     c = str(col).strip().lower()
     c = c.replace("+", "_plus_")
     c = re.sub(r"[^a-z0-9_]+", "_", c)
     c = re.sub(r"_+", "_", c).strip("_")
     return c
 
-def prepare_wide_for_supabase(df_wide: pd.DataFrame) -> pd.DataFrame:
+
+def validate_sql_identifier(name: str) -> str:
+    # Allow only simple SQL identifiers for table/column names.
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name or ""):
+        raise ValueError(f"Unsafe SQL identifier: {name!r}")
+    return name
+
+
+def prepare_wide_for_turso(df_wide: pd.DataFrame) -> pd.DataFrame:
     upload_df = df_wide.copy()
-    upload_df.columns = [supabase_safe_column_name(c) for c in upload_df.columns]
+    upload_df.columns = [turso_safe_column_name(c) for c in upload_df.columns]
 
-    # Keep release_year as a nullable integer.
-    if "release_year" in upload_df.columns:
-        upload_df["release_year"] = pd.to_numeric(
-            upload_df["release_year"], errors="coerce"
-        ).astype("Int64")
+    required = {"movie_title", "release_year", "city"}
+    missing = required - set(upload_df.columns)
+    if missing:
+        raise RuntimeError(
+            "Wide dataframe is missing required Turso key column(s): "
+            + ", ".join(sorted(missing))
+        )
 
-    # Convert pandas NA/NaN values to Python None so they become SQL NULL.
+    upload_df["release_year"] = pd.to_numeric(
+        upload_df["release_year"], errors="coerce"
+    ).astype("Int64")
+
+    if upload_df["release_year"].isna().any():
+        bad = upload_df.loc[
+            upload_df["release_year"].isna(), ["movie_title", "city"]
+        ].head(10)
+        raise RuntimeError(
+            "Some rows have no release_year. Example rows:\\n"
+            + bad.to_string(index=False)
+        )
+
+    upload_df["movie_title"] = upload_df["movie_title"].astype(str).str.strip()
+    upload_df["city"] = upload_df["city"].astype(str).str.strip()
+
     upload_df = upload_df.astype(object).where(pd.notna(upload_df), None)
     return upload_df
 
-def publish_wide_to_supabase(
+
+def sqlite_type_for_series(series: pd.Series) -> str:
+    # Choose a SQLite storage class from dataframe values.
+    non_null = series.dropna()
+    if non_null.empty:
+        return "INTEGER"
+
+    if pd.api.types.is_integer_dtype(series.dtype):
+        return "INTEGER"
+    if pd.api.types.is_float_dtype(series.dtype):
+        return "REAL"
+
+    vals = non_null.tolist()
+    if all(isinstance(v, (int, bool)) and not isinstance(v, float) for v in vals):
+        return "INTEGER"
+    if all(isinstance(v, (int, float, bool)) for v in vals):
+        return "REAL"
+
+    return "TEXT"
+
+
+def row_hash_for_turso(row: dict, data_columns: List[str]) -> str:
+    # Stable hash lets later runs skip unchanged historical rows.
+    import hashlib
+    import json
+
+    payload = {c: row.get(c) for c in data_columns}
+    raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def ensure_turso_schema(conn, upload_df: pd.DataFrame, table_name: str) -> None:
+    # Create table on first run and add new Week/Cume columns automatically.
+    table_name = validate_sql_identifier(table_name)
+
+    column_defs = []
+    for col in upload_df.columns:
+        safe_col = validate_sql_identifier(col)
+        sql_type = sqlite_type_for_series(upload_df[col])
+
+        if safe_col in {"movie_title", "city"}:
+            column_defs.append(f'"{safe_col}" TEXT NOT NULL')
+        elif safe_col == "release_year":
+            column_defs.append(f'"{safe_col}" INTEGER NOT NULL')
+        else:
+            column_defs.append(f'"{safe_col}" {sql_type}')
+
+    column_defs.append('"row_hash" TEXT')
+
+    create_sql = (
+        f'CREATE TABLE IF NOT EXISTS "{table_name}" ('
+        + ", ".join(column_defs)
+        + ")"
+    )
+    conn.execute(create_sql)
+    conn.commit()
+
+    existing_info = conn.execute(
+        f'PRAGMA table_info("{table_name}")'
+    ).fetchall()
+    existing_cols = {row[1] for row in existing_info}
+
+    for col in upload_df.columns:
+        if col in existing_cols:
+            continue
+        safe_col = validate_sql_identifier(col)
+        sql_type = sqlite_type_for_series(upload_df[col])
+        conn.execute(
+            f'ALTER TABLE "{table_name}" ADD COLUMN "{safe_col}" {sql_type}'
+        )
+
+    if "row_hash" not in existing_cols:
+        conn.execute(
+            f'ALTER TABLE "{table_name}" ADD COLUMN "row_hash" TEXT'
+        )
+
+    conn.execute(
+        f'CREATE UNIQUE INDEX IF NOT EXISTS '
+        f'"{table_name}_movie_year_city_uq" '
+        f'ON "{table_name}" ("movie_title", "release_year", "city")'
+    )
+
+    conn.execute(
+        f'CREATE INDEX IF NOT EXISTS '
+        f'"{table_name}_movie_total_idx" '
+        f'ON "{table_name}" ("movie_total_gross")'
+    )
+
+    conn.execute(
+        f'CREATE INDEX IF NOT EXISTS '
+        f'"{table_name}_release_year_idx" '
+        f'ON "{table_name}" ("release_year")'
+    )
+    conn.commit()
+
+
+def publish_wide_to_turso(
     df_wide: pd.DataFrame,
     table_name: str,
-    batch_size: int = SUPABASE_BATCH_SIZE,
+    batch_size: int = TURSO_BATCH_SIZE,
 ) -> None:
-    """Upsert the complete wide Movie×City dataset to Supabase in batches."""
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        print("Supabase publish skipped: SUPABASE_URL or SUPABASE_KEY is not set.")
-        return
+    # Synchronize final Movie×City wide data to Turso.
+    if not TURSO_DATABASE_URL or not TURSO_AUTH_TOKEN:
+        raise RuntimeError(
+            "TURSO_DATABASE_URL or TURSO_AUTH_TOKEN is not set. "
+            "Add both as GitHub Actions repository secrets."
+        )
 
     try:
-        from supabase import create_client
+        import libsql
     except ImportError as exc:
         raise RuntimeError(
-            "Supabase Python package is missing. Run: py -m pip install supabase"
+            "Python package 'libsql' is missing. "
+            "Add libsql to automation/requirements.txt."
         ) from exc
 
-    if not table_name:
-        raise RuntimeError("Supabase table name is empty.")
+    table_name = validate_sql_identifier(table_name)
+    upload_df = prepare_wide_for_turso(df_wide)
 
-    upload_df = prepare_wide_for_supabase(df_wide)
-    rows = upload_df.to_dict(orient="records")
-
-    if not rows:
-        print("Supabase publish skipped: no wide rows to upload.")
+    if upload_df.empty:
+        print("Turso publish skipped: no wide rows to upload.")
         return
 
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    conn = libsql.connect(
+        database=TURSO_DATABASE_URL,
+        auth_token=TURSO_AUTH_TOKEN,
+    )
 
-    # This requires a UNIQUE constraint on:
-    # (movie_title, release_year, city)
-    conflict_cols = "movie_title,release_year,city"
+    try:
+        ensure_turso_schema(conn, upload_df, table_name)
 
-    print(f"Publishing {len(rows)} rows to Supabase table '{table_name}'...")
+        data_columns = list(upload_df.columns)
+        key_columns = ["movie_title", "release_year", "city"]
 
-    for start in range(0, len(rows), batch_size):
-        batch = rows[start:start + batch_size]
-        supabase.table(table_name).upsert(
-            batch,
-            on_conflict=conflict_cols,
-        ).execute()
-        end = min(start + batch_size, len(rows))
-        print(f"  Supabase: uploaded {end}/{len(rows)} rows")
+        new_rows = upload_df.to_dict(orient="records")
+        new_by_key = {}
 
-    print("Supabase publish completed successfully.")
+        for row in new_rows:
+            key = (
+                str(row["movie_title"]),
+                int(row["release_year"]),
+                str(row["city"]),
+            )
+            row_hash = row_hash_for_turso(row, data_columns)
+            row["row_hash"] = row_hash
+            new_by_key[key] = row
+
+        existing_rows = conn.execute(
+            f'SELECT "movie_title", "release_year", "city", "row_hash" '
+            f'FROM "{table_name}"'
+        ).fetchall()
+
+        existing_hash_by_key = {
+            (str(r[0]), int(r[1]), str(r[2])): r[3]
+            for r in existing_rows
+        }
+
+        changed_rows = []
+        for key, row in new_by_key.items():
+            if existing_hash_by_key.get(key) != row["row_hash"]:
+                changed_rows.append(row)
+
+        stale_keys = [
+            key for key in existing_hash_by_key
+            if key not in new_by_key
+        ]
+
+        insert_columns = data_columns + ["row_hash"]
+        quoted_cols = ", ".join(f'"{c}"' for c in insert_columns)
+        placeholders = ", ".join("?" for _ in insert_columns)
+
+        update_columns = [
+            c for c in insert_columns
+            if c not in key_columns
+        ]
+        update_clause = ", ".join(
+            f'"{c}" = excluded."{c}"' for c in update_columns
+        )
+
+        upsert_sql = (
+            f'INSERT INTO "{table_name}" ({quoted_cols}) '
+            f'VALUES ({placeholders}) '
+            f'ON CONFLICT ("movie_title", "release_year", "city") '
+            f'DO UPDATE SET {update_clause}'
+        )
+
+        print(
+            f"Turso sync: {len(new_by_key)} current rows; "
+            f"{len(changed_rows)} new/changed; "
+            f"{len(stale_keys)} stale."
+        )
+
+        for start in range(0, len(changed_rows), batch_size):
+            batch = changed_rows[start:start + batch_size]
+            values = [
+                tuple(row.get(c) for c in insert_columns)
+                for row in batch
+            ]
+            conn.executemany(upsert_sql, values)
+            conn.commit()
+            end = min(start + batch_size, len(changed_rows))
+            print(f"  Turso: wrote {end}/{len(changed_rows)} changed rows")
+
+        if stale_keys:
+            delete_sql = (
+                f'DELETE FROM "{table_name}" '
+                f'WHERE "movie_title" = ? '
+                f'AND "release_year" = ? '
+                f'AND "city" = ?'
+            )
+            for start in range(0, len(stale_keys), batch_size):
+                batch = stale_keys[start:start + batch_size]
+                conn.executemany(delete_sql, batch)
+                conn.commit()
+
+        final_count = conn.execute(
+            f'SELECT COUNT(*) FROM "{table_name}"'
+        ).fetchone()[0]
+
+        print(
+            f"Turso sync completed successfully. "
+            f"Live rows in {table_name}: {final_count}"
+        )
+
+    finally:
+        conn.close()
+
 
 # ----------------------------
 # CLI / main
@@ -929,10 +1139,10 @@ def main():
     ap.add_argument("--out-prefix", default="weekly_history", help="Output filename prefix (no path)")
     ap.add_argument("--max-weeks", type=int, default=20,
                     help="Maximum number of Week columns to display in the wide sheet (default: 20)")
-    ap.add_argument("--supabase-table", default=SUPABASE_TABLE,
-                    help="Supabase destination table (default: SUPABASE_TABLE env var or film_collection_wide)")
-    ap.add_argument("--skip-supabase", action="store_true",
-                    help="Create CSVs only; do not publish to Supabase")
+    ap.add_argument("--turso-table", default=TURSO_TABLE,
+                    help="Turso destination table (default: TURSO_TABLE env var or film_collection_wide)")
+    ap.add_argument("--skip-turso", action="store_true",
+                    help="Create CSVs only; do not publish to Turso")
     args = ap.parse_args()
 
     date_from = parse_cli_date(args.date_from)
@@ -958,11 +1168,11 @@ def main():
     df_wide = make_wide(df, thursday_map, max_weeks=args.max_weeks, force_day1_col=True)
     df_wide.to_csv(wide_csv, index=False)
 
-    if not args.skip_supabase:
-        publish_wide_to_supabase(
+    if not args.skip_turso:
+        publish_wide_to_turso(
             df_wide,
-            table_name=args.supabase_table,
-            batch_size=SUPABASE_BATCH_SIZE,
+            table_name=args.turso_table,
+            batch_size=TURSO_BATCH_SIZE,
         )
 
     print("Wrote:")
