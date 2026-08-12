@@ -7,6 +7,9 @@
   --highlight-color: #fff8e1;
   --table-border: #e0e0e0;
   --accent-color: #1976d2;
+  --header-color: skyblue;
+  --sticky-bg: #ffffff;
+  --total-bg: #fff3cd;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -14,8 +17,14 @@
     --bg-color: #121212;
     --text-color: #f5f5f5;
     --highlight-color: #1a1a1a;
-    --table-border: #333;
+    --table-border: #333333;
+    --sticky-bg: #121212;
+    --total-bg: #332f20;
   }
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
@@ -27,7 +36,8 @@ body {
 
 .App {
   padding: 2rem;
-  max-width: 1200px;
+  width: 100%;
+  max-width: 98vw;
   margin: auto;
 }
 
@@ -37,29 +47,50 @@ h1 {
   color: var(--accent-color);
 }
 
+h2 {
+  color: var(--text-color);
+}
+
+/* --------------------------------------------------
+   Search
+-------------------------------------------------- */
+
 .search-input {
   width: 100%;
-  padding: 10px;
+  padding: 12px;
   margin-bottom: 1rem;
   font-size: 1rem;
-  border-radius: 4px;
-  border: 1px solid #ccc;
+  border-radius: 6px;
+  border: 1px solid #cccccc;
+  background-color: var(--bg-color);
+  color: var(--text-color);
 }
+
+/* --------------------------------------------------
+   Filters
+-------------------------------------------------- */
 
 .filters {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
   gap: 1rem;
-  justify-content: center;
   margin-bottom: 2rem;
+  width: 100%;
 }
 
-.filters select {
-  padding: 8px;
-  font-size: 1rem;
-  border-radius: 4px;
-  border: 1px solid #ccc;
+.filters > div {
+  min-width: 0;
 }
+
+/* react-select needs a high z-index above sticky tables */
+.filters {
+  position: relative;
+  z-index: 100;
+}
+
+/* --------------------------------------------------
+   KPI cards
+-------------------------------------------------- */
 
 .kpi-container {
   display: flex;
@@ -74,8 +105,8 @@ h1 {
   padding: 1rem;
   border-radius: 8px;
   text-align: center;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  min-width: 150px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  min-width: 180px;
   flex: 1;
 }
 
@@ -87,52 +118,229 @@ h1 {
 .kpi-card p {
   font-size: 1.2rem;
   font-weight: bold;
-  color: black;
+  color: var(--text-color);
+  margin: 0.4rem 0;
 }
 
+.kpi-card small {
+  color: var(--text-color);
+  opacity: 0.75;
+}
+
+/* --------------------------------------------------
+   Tables
+-------------------------------------------------- */
+
+/*
+  App.tsx already wraps the main table in:
+  overflowX: auto
+
+  These rules make the wide Week/Cumulative table usable.
+*/
+
 table {
-  width: 100%;
-  border-collapse: collapse;
-  box-shadow: 0 0 10px rgba(0,0,0,0.05);
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background-color: var(--bg-color);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.05);
 }
 
 thead {
-  background-color: skyblue;
+  background-color: var(--header-color);
 }
 
 thead th {
   text-align: center;
-  padding: 12px;
+  padding: 12px 10px;
   font-weight: 600;
+  border-right: 1px solid var(--table-border);
   border-bottom: 2px solid var(--table-border);
   cursor: pointer;
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background-color: var(--header-color);
+  white-space: nowrap;
+  min-width: 125px;
 }
+
+tbody td {
+  padding: 10px;
+  border-right: 1px solid var(--table-border);
+  border-bottom: 1px solid var(--table-border);
+  text-align: center;
+  white-space: nowrap;
+  min-width: 125px;
+  background-color: var(--bg-color);
+}
+
+tbody tr:hover td {
+  background-color: var(--highlight-color);
+}
+
+/* --------------------------------------------------
+   Important first columns
+-------------------------------------------------- */
+
+/* Movie */
+thead th:nth-child(1),
+tbody td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  min-width: 220px;
+  max-width: 220px;
+  z-index: 15;
+}
+
+thead th:nth-child(1) {
+  z-index: 35;
+  background-color: var(--header-color);
+}
+
+tbody td:nth-child(1) {
+  background-color: var(--sticky-bg);
+  text-align: left;
+  font-weight: 600;
+}
+
+/* City */
+thead th:nth-child(2),
+tbody td:nth-child(2) {
+  position: sticky;
+  left: 220px;
+  min-width: 150px;
+  max-width: 150px;
+  z-index: 14;
+}
+
+thead th:nth-child(2) {
+  z-index: 34;
+  background-color: var(--header-color);
+}
+
+tbody td:nth-child(2) {
+  background-color: var(--sticky-bg);
+}
+
+/* Release Year */
+thead th:nth-child(3),
+tbody td:nth-child(3) {
+  position: sticky;
+  left: 370px;
+  min-width: 110px;
+  max-width: 110px;
+  z-index: 13;
+}
+
+thead th:nth-child(3) {
+  z-index: 33;
+  background-color: var(--header-color);
+}
+
+tbody td:nth-child(3) {
+  background-color: var(--sticky-bg);
+}
+
+/* Total Cumulative Gross */
+thead th:nth-child(4),
+tbody td:nth-child(4) {
+  position: sticky;
+  left: 480px;
+  min-width: 180px;
+  max-width: 180px;
+  z-index: 12;
+  font-weight: 700;
+}
+
+thead th:nth-child(4) {
+  z-index: 32;
+  background-color: #ffd966;
+}
+
+tbody td:nth-child(4) {
+  background-color: var(--total-bg);
+}
+
+/* Small shadow after sticky section */
+thead th:nth-child(4),
+tbody td:nth-child(4) {
+  box-shadow: 4px 0 5px rgba(0, 0, 0, 0.08);
+}
+
+/* Keep sticky cells colored on hover */
+
+tbody tr:hover td:nth-child(1),
+tbody tr:hover td:nth-child(2),
+tbody tr:hover td:nth-child(3) {
+  background-color: var(--highlight-color);
+}
+
+tbody tr:hover td:nth-child(4) {
+  background-color: var(--total-bg);
+}
+
+/* --------------------------------------------------
+   Sorted column indicators
+-------------------------------------------------- */
 
 thead th.sorted-asc::after {
   content: "\25B2";
   position: absolute;
-  right: 8px;
+  right: 5px;
 }
 
 thead th.sorted-desc::after {
   content: "\25BC";
   position: absolute;
-  right: 8px;
+  right: 5px;
 }
 
-tbody td {
-  padding: 10px;
-  border-bottom: 1px solid var(--table-border);
-  text-align: center;
+/* --------------------------------------------------
+   Pagination
+-------------------------------------------------- */
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 1.5rem 0;
+  gap: 0.75rem;
 }
+
+.pagination button {
+  padding: 8px 18px;
+  border: 1px solid var(--primary-color);
+  border-radius: 5px;
+  background-color: var(--primary-color);
+  color: white;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+
+.pagination button:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.pagination button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------
+   Highlight
+-------------------------------------------------- */
 
 tr.highlight {
   background-color: #ffffcc;
   transition: background-color 0.3s ease;
 }
 
-/* Spinner */
+/* --------------------------------------------------
+   Spinner
+-------------------------------------------------- */
+
 .spinner {
   margin: 2rem auto;
   border: 4px solid #f3f3f3;
@@ -144,23 +352,76 @@ tr.highlight {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
-/* Mobile adjustments */
+/* --------------------------------------------------
+   Charts
+-------------------------------------------------- */
+
+.recharts-wrapper {
+  margin: auto;
+}
+
+/* --------------------------------------------------
+   Mobile
+-------------------------------------------------- */
+
 @media screen and (max-width: 768px) {
+  .App {
+    padding: 1rem;
+    max-width: 100vw;
+  }
+
   .filters {
-    flex-direction: column;
-    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 
   .kpi-container {
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
   }
 
-  table, thead, tbody, th, td, tr {
-    font-size: 0.85rem;
+  .kpi-card {
+    width: 100%;
+  }
+
+  table,
+  thead,
+  tbody,
+  th,
+  td,
+  tr {
+    font-size: 0.82rem;
+  }
+
+  /*
+    Disable sticky left columns on small screens.
+    Horizontal scrolling is easier on phones.
+  */
+
+  thead th:nth-child(1),
+  tbody td:nth-child(1),
+  thead th:nth-child(2),
+  tbody td:nth-child(2),
+  thead th:nth-child(3),
+  tbody td:nth-child(3),
+  thead th:nth-child(4),
+  tbody td:nth-child(4) {
+    position: static;
+    min-width: 130px;
+    max-width: none;
+    box-shadow: none;
+  }
+
+  thead th:nth-child(1),
+  tbody td:nth-child(1) {
+    min-width: 190px;
   }
 }
