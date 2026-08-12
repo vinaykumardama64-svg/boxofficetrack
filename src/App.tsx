@@ -227,12 +227,17 @@ function App() {
       setLoading(true);
       setError("");
 
+      // Clear rows from the previous request immediately so that
+      // City Breakdown rows are never rendered inside Movie Totals
+      // (or vice versa) while the new tab request is loading.
+      setRows([]);
+
       const response = await fetch(
-  buildDataUrl(),
-  {
-    cache: "no-store",
-  }
-);
+        buildDataUrl(),
+        {
+          cache: "no-store",
+        }
+      );
 
       if (!response.ok) {
         throw new Error(
@@ -433,6 +438,17 @@ function App() {
   const changeView = (
     mode: ViewMode
   ) => {
+    if (mode === viewMode) {
+      return;
+    }
+
+    // Remove rows belonging to the old tab before switching.
+    // This prevents stale City Breakdown rows from appearing
+    // under Movie Totals while the fresh API call is in flight.
+    setRows([]);
+    setError("");
+    setLoading(true);
+
     setViewMode(mode);
 
     if (mode === "cities") {
