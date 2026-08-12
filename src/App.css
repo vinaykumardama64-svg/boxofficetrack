@@ -425,3 +425,22 @@ tr.highlight {
     min-width: 190px;
   }
 }
+/* Movie title should wrap instead of overflowing */
+.movie-cell {
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.35;
+  min-width: 220px;
+  max-width: 280px;
+  text-align: left;
+}
+
+/* Sticky first column must also support wrapped titles */
+tbody td:nth-child(1) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  min-width: 220px;
+  max-width: 280px;
+}
