@@ -26,12 +26,8 @@ const API_URL = "/.netlify/functions/boxoffice";
 const ITEMS_PER_PAGE = 25;
 
 // ============================================================
-// FILM INFORMATION SITE-SPECIFIC CITY / STATION NAMES
-//
-// These overrides are checked FIRST.
-//
-// Film Information commonly uses older/trade names such as:
-// BOMBAY, NASIK, MANGALORE, KOZHIKODE, etc.
+// FILMINFORMATION CITY / STATION MAP
+// Checked first.
 // ============================================================
 
 const FILMINFO_CITY_STATE_MAP: Record<string, string> = {
@@ -152,6 +148,8 @@ const FILMINFO_CITY_STATE_MAP: Record<string, string> = {
   SHIMOGA: "Karnataka",
   SHIVAMOGGA: "Karnataka",
   DAVANGERE: "Karnataka",
+  DHARWAD: "Karnataka",
+  GULBARGA: "Karnataka",
 
   // Kerala
   KOZHIKODE: "Kerala",
@@ -244,12 +242,12 @@ const FILMINFO_CITY_STATE_MAP: Record<string, string> = {
 };
 
 // ============================================================
-// NORMAL FALLBACK CITY MAP
-//
-// Used only if the Film Information override does not match.
+// NORMAL FALLBACK MAP
+// Used only if FilmInformation map has no match.
 // ============================================================
 
 const NORMAL_CITY_STATE_MAP: Record<string, string> = {
+  // Andhra Pradesh
   anantapur: "Andhra Pradesh",
   bhimavaram: "Andhra Pradesh",
   eluru: "Andhra Pradesh",
@@ -270,6 +268,7 @@ const NORMAL_CITY_STATE_MAP: Record<string, string> = {
   vizag: "Andhra Pradesh",
   vizianagaram: "Andhra Pradesh",
 
+  // Telangana
   hyderabad: "Telangana",
   secunderabad: "Telangana",
   nizamabad: "Telangana",
@@ -280,6 +279,7 @@ const NORMAL_CITY_STATE_MAP: Record<string, string> = {
   nalgonda: "Telangana",
   mahbubnagar: "Telangana",
 
+  // Tamil Nadu
   chennai: "Tamil Nadu",
   madras: "Tamil Nadu",
   coimbatore: "Tamil Nadu",
@@ -291,6 +291,7 @@ const NORMAL_CITY_STATE_MAP: Record<string, string> = {
   tiruchirappalli: "Tamil Nadu",
   tirunelveli: "Tamil Nadu",
 
+  // Karnataka
   bangalore: "Karnataka",
   bengaluru: "Karnataka",
   mangalore: "Karnataka",
@@ -307,7 +308,10 @@ const NORMAL_CITY_STATE_MAP: Record<string, string> = {
   shimoga: "Karnataka",
   shivamogga: "Karnataka",
   davangere: "Karnataka",
+  dharwad: "Karnataka",
+  gulbarga: "Karnataka",
 
+  // Kerala
   kochi: "Kerala",
   cochin: "Kerala",
   thrissur: "Kerala",
@@ -318,6 +322,7 @@ const NORMAL_CITY_STATE_MAP: Record<string, string> = {
   kottayam: "Kerala",
   alappuzha: "Kerala",
 
+  // Maharashtra
   mumbai: "Maharashtra",
   bombay: "Maharashtra",
   pune: "Maharashtra",
@@ -330,6 +335,7 @@ const NORMAL_CITY_STATE_MAP: Record<string, string> = {
   aurangabad: "Maharashtra",
   "chhatrapati sambhajinagar": "Maharashtra",
 
+  // Gujarat
   ahmedabad: "Gujarat",
   surat: "Gujarat",
   vadodara: "Gujarat",
@@ -337,15 +343,18 @@ const NORMAL_CITY_STATE_MAP: Record<string, string> = {
   rajkot: "Gujarat",
   bhavnagar: "Gujarat",
 
+  // West Bengal
   kolkata: "West Bengal",
   calcutta: "West Bengal",
   howrah: "West Bengal",
   durgapur: "West Bengal",
   asansol: "West Bengal",
 
+  // Delhi
   delhi: "Delhi",
   "new delhi": "Delhi",
 
+  // Rajasthan
   jaipur: "Rajasthan",
   jodhpur: "Rajasthan",
   kota: "Rajasthan",
@@ -353,6 +362,7 @@ const NORMAL_CITY_STATE_MAP: Record<string, string> = {
   ajmer: "Rajasthan",
   bharatpur: "Rajasthan",
 
+  // Uttar Pradesh
   lucknow: "Uttar Pradesh",
   kanpur: "Uttar Pradesh",
   agra: "Uttar Pradesh",
@@ -363,41 +373,52 @@ const NORMAL_CITY_STATE_MAP: Record<string, string> = {
   prayagraj: "Uttar Pradesh",
   allahabad: "Uttar Pradesh",
 
+  // Madhya Pradesh
   gwalior: "Madhya Pradesh",
   indore: "Madhya Pradesh",
   bhopal: "Madhya Pradesh",
   jabalpur: "Madhya Pradesh",
 
+  // Chandigarh
   chandigarh: "Chandigarh",
 
+  // Punjab
   amritsar: "Punjab",
   ludhiana: "Punjab",
   jalandhar: "Punjab",
   patiala: "Punjab",
 
+  // Haryana
   rohtak: "Haryana",
   sirsa: "Haryana",
   gurgaon: "Haryana",
   gurugram: "Haryana",
   faridabad: "Haryana",
 
+  // Bihar
   patna: "Bihar",
 
+  // Jharkhand
   ranchi: "Jharkhand",
   jamshedpur: "Jharkhand",
   dhanbad: "Jharkhand",
 
+  // Odisha
   bhubaneswar: "Odisha",
   bhubaneshwar: "Odisha",
   cuttack: "Odisha",
 
+  // Chhattisgarh
   raipur: "Chhattisgarh",
   bhilai: "Chhattisgarh",
 
+  // Assam
   guwahati: "Assam",
 
+  // Uttarakhand
   dehradun: "Uttarakhand",
 
+  // Puducherry
   pondicherry: "Puducherry",
   puducherry: "Puducherry",
 };
@@ -418,20 +439,21 @@ const getStateFromCity = (city: string) => {
     return "Unknown";
   }
 
-  // 1. Film Information exact/trade spelling first
+  // 1. FilmInformation spelling/label
   const siteKey = cleanCity.toUpperCase();
 
   if (FILMINFO_CITY_STATE_MAP[siteKey]) {
     return FILMINFO_CITY_STATE_MAP[siteKey];
   }
 
-  // 2. Standard fallback
+  // 2. Normal fallback
   const normalKey = cleanCity.toLowerCase();
 
   if (NORMAL_CITY_STATE_MAP[normalKey]) {
     return NORMAL_CITY_STATE_MAP[normalKey];
   }
 
+  // 3. Keep unresolved city visible
   return "Unknown";
 };
 
@@ -461,6 +483,10 @@ function App() {
 
   const [sortAsc, setSortAsc] = useState(false);
 
+  // ============================================================
+  // Formatting
+  // ============================================================
+
   const toIndianFormat = (num?: number | null) =>
     new Intl.NumberFormat("en-IN", {
       maximumFractionDigits: 0,
@@ -468,6 +494,10 @@ function App() {
 
   const toCrores = (num?: number | null) =>
     `${(Number(num || 0) / 10000000).toFixed(2)} Cr`;
+
+  // ============================================================
+  // Base-title logic
+  // ============================================================
 
   const getBaseMovieTitle = (title: string) => {
     let base = String(title || "").trim();
@@ -509,7 +539,7 @@ function App() {
   };
 
   // ============================================================
-  // FETCH + ADD STATE IN FRONTEND
+  // Fetch + State enrichment
   // ============================================================
 
   const fetchData = async () => {
@@ -565,11 +595,21 @@ function App() {
               .map((row) => row.state)
               .filter(
                 (state): state is string =>
-                  Boolean(state) &&
-                  state !== "Unknown"
+                  Boolean(state)
               )
           ),
-        ].sort()
+        ].sort((a, b) => {
+          // Keep Unknown at the end
+          if (a === "Unknown" && b !== "Unknown") {
+            return 1;
+          }
+
+          if (b === "Unknown" && a !== "Unknown") {
+            return -1;
+          }
+
+          return a.localeCompare(b);
+        })
       );
 
       setYears(
@@ -602,7 +642,7 @@ function App() {
   }, []);
 
   // ============================================================
-  // WEEK COLUMNS
+  // Week columns
   // ============================================================
 
   const weekColumns = useMemo(() => {
@@ -632,7 +672,7 @@ function App() {
   }, [data]);
 
   // ============================================================
-  // CUMULATIVE COLUMN NAMES
+  // Cumulative columns
   // ============================================================
 
   const cumulativeColumns = useMemo(() => {
@@ -668,29 +708,21 @@ function App() {
   }, [data]);
 
   // ============================================================
-  // UNIVERSAL TOTAL
+  // Universal Total = Day1 + Week1...Week20
   // ============================================================
 
-  const calculateWeeklyTotal = (
-    row: MovieData
-  ) => {
-    let total =
-      Number(
-        row.day_1_gross || 0
-      );
+  const calculateWeeklyTotal = (row: MovieData) => {
+    let total = Number(row.day_1_gross || 0);
 
     weekColumns.forEach((column) => {
-      total +=
-        Number(
-          row[column] || 0
-        );
+      total += Number(row[column] || 0);
     });
 
     return total;
   };
 
   // ============================================================
-  // REBUILD CUMULATIVE
+  // Rebuild cumulative values
   // ============================================================
 
   const rebuildProgression = (
@@ -700,40 +732,25 @@ function App() {
       ...source,
     };
 
-    const day1 =
-      Number(
-        row.day_1_gross || 0
-      );
+    const day1 = Number(row.day_1_gross || 0);
 
-    let running =
-      day1;
+    let running = day1;
 
     cumulativeColumns.forEach(
-      (
-        column,
-        index
-      ) => {
+      (column, index) => {
         if (index === 0) {
           row[column] = day1;
           return;
         }
 
         const weekColumn =
-          weekColumns[
-            index - 1
-          ];
+          weekColumns[index - 1];
 
         if (weekColumn) {
-          running +=
-            Number(
-              row[
-                weekColumn
-              ] || 0
-            );
+          running += Number(row[weekColumn] || 0);
         }
 
-        row[column] =
-          running;
+        row[column] = running;
       }
     );
 
@@ -743,9 +760,11 @@ function App() {
     return row;
   };
 
-  const formatColumnName = (
-    column: string
-  ) => {
+  // ============================================================
+  // Labels
+  // ============================================================
+
+  const formatColumnName = (column: string) => {
     if (column === "movie_title") return "Movie";
     if (column === "city") return "City";
     if (column === "state") return "State";
@@ -755,19 +774,15 @@ function App() {
     if (column === "day_1_gross") return "Day 1";
 
     if (column.startsWith("week_")) {
-      return `Week ${column.replace(
-        "week_",
-        ""
-      )}`;
+      return `Week ${column.replace("week_", "")}`;
     }
 
     if (column.startsWith("cume_")) {
-      const label =
-        column
-          .replace("cume_", "")
-          .replaceAll("_plus_", "+")
-          .replaceAll("_", " ")
-          .toUpperCase();
+      const label = column
+        .replace("cume_", "")
+        .replaceAll("_plus_", "+")
+        .replaceAll("_", " ")
+        .toUpperCase();
 
       return `Cume ${label}`;
     }
@@ -776,19 +791,16 @@ function App() {
   };
 
   // ============================================================
-  // FILTERING
+  // Filtering
   // ============================================================
 
   const filteredRawData = useMemo(() => {
-    const searchText =
-      search
-        .toLowerCase()
-        .trim();
+    const searchText = search
+      .toLowerCase()
+      .trim();
 
     return data.filter((row) => {
-      if (
-        selectedMovies.length > 0
-      ) {
+      if (selectedMovies.length > 0) {
         const rowBase =
           getBaseMovieTitle(
             row.movie_title
@@ -851,9 +863,7 @@ function App() {
           .toLowerCase();
 
         if (
-          !combined.includes(
-            searchText
-          )
+          !combined.includes(searchText)
         ) {
           return false;
         }
@@ -871,23 +881,19 @@ function App() {
   ]);
 
   // ============================================================
-  // CITY DATA
+  // City data
   // ============================================================
 
   const cityData = useMemo(() => {
-    return filteredRawData.map(
-      (rawRow) => {
-        const rebuilt =
-          rebuildProgression(
-            rawRow
-          );
+    return filteredRawData.map((rawRow) => {
+      const rebuilt =
+        rebuildProgression(rawRow);
 
-        rebuilt.total_gross =
-          rebuilt.movie_total_gross;
+      rebuilt.total_gross =
+        rebuilt.movie_total_gross;
 
-        return rebuilt;
-      }
-    );
+      return rebuilt;
+    });
   }, [
     filteredRawData,
     weekColumns,
@@ -895,7 +901,7 @@ function App() {
   ]);
 
   // ============================================================
-  // DUBBED / EXACT VERSION
+  // Dubbed / exact-version data
   // ============================================================
 
   const dubbedData = useMemo(() => {
@@ -964,7 +970,7 @@ function App() {
   ]);
 
   // ============================================================
-  // BASE MOVIE TOTALS
+  // Movie totals
   // ============================================================
 
   const movieTotals = useMemo(() => {
@@ -975,9 +981,7 @@ function App() {
       >();
 
     dubbedData.forEach(
-      (
-        versionRow
-      ) => {
+      (versionRow) => {
         const baseTitle =
           getBaseMovieTitle(
             versionRow.movie_title
@@ -1004,10 +1008,7 @@ function App() {
             initial[column] = 0;
           });
 
-          groups.set(
-            key,
-            initial
-          );
+          groups.set(key, initial);
         }
 
         const group =
@@ -1045,7 +1046,7 @@ function App() {
   ]);
 
   // ============================================================
-  // ACTIVE DATA
+  // Active dataset
   // ============================================================
 
   const activeData =
@@ -1056,34 +1057,25 @@ function App() {
       : cityData;
 
   // ============================================================
-  // SORT
+  // Sort
   // ============================================================
 
   const sortedData = useMemo(() => {
-    const rows = [
-      ...activeData,
-    ];
+    const rows = [...activeData];
 
     rows.sort((a, b) => {
-      const aValue =
-        a[sortColumn];
-
-      const bValue =
-        b[sortColumn];
+      const aValue = a[sortColumn];
+      const bValue = b[sortColumn];
 
       if (
         typeof aValue === "string" ||
         typeof bValue === "string"
       ) {
         const first =
-          String(
-            aValue || ""
-          );
+          String(aValue || "");
 
         const second =
-          String(
-            bValue || ""
-          );
+          String(bValue || "");
 
         return sortAsc
           ? first.localeCompare(second)
@@ -1091,14 +1083,10 @@ function App() {
       }
 
       const first =
-        Number(
-          aValue || 0
-        );
+        Number(aValue || 0);
 
       const second =
-        Number(
-          bValue || 0
-        );
+        Number(bValue || 0);
 
       return sortAsc
         ? first - second
@@ -1112,12 +1100,8 @@ function App() {
     sortAsc,
   ]);
 
-  const handleSort = (
-    column: string
-  ) => {
-    if (
-      sortColumn === column
-    ) {
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
       setSortAsc(
         (old) => !old
       );
@@ -1138,9 +1122,11 @@ function App() {
     setPage(1);
   };
 
-  const changeView = (
-    mode: ViewMode
-  ) => {
+  // ============================================================
+  // Tab change
+  // ============================================================
+
+  const changeView = (mode: ViewMode) => {
     setViewMode(mode);
 
     if (mode === "cities") {
@@ -1168,7 +1154,7 @@ function App() {
   ]);
 
   // ============================================================
-  // PAGINATION
+  // Pagination
   // ============================================================
 
   const totalPages =
@@ -1212,11 +1198,17 @@ function App() {
       ]
     );
 
+  // ============================================================
+  // Loading/error
+  // ============================================================
+
   if (loading) {
     return (
       <div className="App">
         <h1>🎬 BoxOfficeTrack</h1>
+
         <div className="spinner" />
+
         <p style={{ textAlign: "center" }}>
           Loading box office data...
         </p>
@@ -1240,10 +1232,16 @@ function App() {
     );
   }
 
+  // ============================================================
+  // UI
+  // ============================================================
+
   return (
     <div className="App">
 
-      <h1>🎬 BoxOfficeTrack</h1>
+      <h1>
+        🎬 BoxOfficeTrack
+      </h1>
 
       <input
         type="text"
@@ -1263,10 +1261,12 @@ function App() {
 
         <Select
           isMulti
-          options={movies.map((movie) => ({
-            value: movie,
-            label: movie,
-          }))}
+          options={movies.map(
+            (movie) => ({
+              value: movie,
+              label: movie,
+            })
+          )}
           value={selectedMovies}
           onChange={(value) =>
             setSelectedMovies(
@@ -1278,10 +1278,12 @@ function App() {
 
         <Select
           isMulti
-          options={cities.map((city) => ({
-            value: city,
-            label: city,
-          }))}
+          options={cities.map(
+            (city) => ({
+              value: city,
+              label: city,
+            })
+          )}
           value={selectedCities}
           onChange={(value) =>
             setSelectedCities(
@@ -1293,10 +1295,12 @@ function App() {
 
         <Select
           isMulti
-          options={states.map((state) => ({
-            value: state,
-            label: state,
-          }))}
+          options={states.map(
+            (state) => ({
+              value: state,
+              label: state,
+            })
+          )}
           value={selectedStates}
           onChange={(value) =>
             setSelectedStates(
@@ -1308,10 +1312,12 @@ function App() {
 
         <Select
           isMulti
-          options={years.map((year) => ({
-            value: String(year),
-            label: String(year),
-          }))}
+          options={years.map(
+            (year) => ({
+              value: String(year),
+              label: String(year),
+            })
+          )}
           value={selectedYears}
           onChange={(value) =>
             setSelectedYears(
@@ -1329,11 +1335,13 @@ function App() {
 
         <div className="kpi-card">
           <h3>Movie Total Gross</h3>
+
           <p>
             ₹{toIndianFormat(
               grandMovieTotal
             )}
           </p>
+
           <small>
             ₹{toCrores(
               grandMovieTotal
@@ -1369,9 +1377,7 @@ function App() {
               : "view-tab"
           }
           onClick={() =>
-            changeView(
-              "movies"
-            )
+            changeView("movies")
           }
         >
           Movie Totals
@@ -1384,9 +1390,7 @@ function App() {
               : "view-tab"
           }
           onClick={() =>
-            changeView(
-              "dubbed"
-            )
+            changeView("dubbed")
           }
         >
           Dubbed
@@ -1399,9 +1403,7 @@ function App() {
               : "view-tab"
           }
           onClick={() =>
-            changeView(
-              "cities"
-            )
+            changeView("cities")
           }
         >
           City Breakdown
@@ -1417,7 +1419,7 @@ function App() {
           : "Movie × City Collections"}
       </h2>
 
-      {/* MOVIE / DUBBED */}
+      {/* MOVIE TOTALS / DUBBED */}
 
       {(viewMode === "movies" ||
         viewMode === "dubbed") && (
@@ -1460,9 +1462,7 @@ function App() {
                 </th>
 
                 {cumulativeColumns.map(
-                  (
-                    column
-                  ) => (
+                  (column) => (
                     <th
                       key={column}
                       onClick={() =>
@@ -1489,9 +1489,7 @@ function App() {
                 </th>
 
                 {weekColumns.map(
-                  (
-                    column
-                  ) => (
+                  (column) => (
                     <th
                       key={column}
                       onClick={() =>
@@ -1513,9 +1511,7 @@ function App() {
             <tbody>
 
               {paginatedData.map(
-                (
-                  row
-                ) => (
+                (row) => (
                   <tr
                     key={`${row.movie_title}-${row.release_year}`}
                   >
@@ -1543,9 +1539,7 @@ function App() {
                     </td>
 
                     {cumulativeColumns.map(
-                      (
-                        column
-                      ) => (
+                      (column) => (
                         <td
                           key={column}
                         >
@@ -1571,9 +1565,7 @@ function App() {
                     </td>
 
                     {weekColumns.map(
-                      (
-                        column
-                      ) => (
+                      (column) => (
                         <td
                           key={column}
                         >
@@ -1599,7 +1591,7 @@ function App() {
         </div>
       )}
 
-      {/* CITY */}
+      {/* CITY BREAKDOWN */}
 
       {viewMode === "cities" && (
         <div className="table-scroll">
@@ -1661,9 +1653,7 @@ function App() {
                 </th>
 
                 {cumulativeColumns.map(
-                  (
-                    column
-                  ) => (
+                  (column) => (
                     <th
                       key={column}
                       onClick={() =>
@@ -1690,9 +1680,7 @@ function App() {
                 </th>
 
                 {weekColumns.map(
-                  (
-                    column
-                  ) => (
+                  (column) => (
                     <th
                       key={column}
                       onClick={() =>
@@ -1758,9 +1746,7 @@ function App() {
                     </td>
 
                     {cumulativeColumns.map(
-                      (
-                        column
-                      ) => (
+                      (column) => (
                         <td
                           key={column}
                         >
@@ -1786,9 +1772,7 @@ function App() {
                     </td>
 
                     {weekColumns.map(
-                      (
-                        column
-                      ) => (
+                      (column) => (
                         <td
                           key={column}
                         >
@@ -1820,7 +1804,9 @@ function App() {
         <div className="pagination">
 
           <button
-            disabled={page === 1}
+            disabled={
+              page === 1
+            }
             onClick={() =>
               setPage(
                 (old) =>
