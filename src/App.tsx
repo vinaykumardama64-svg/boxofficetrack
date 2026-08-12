@@ -54,10 +54,6 @@ function App() {
   const [sortColumn, setSortColumn] = useState<string>("");
   const [sortAsc, setSortAsc] = useState(true);
 
-  // ------------------------------------------------------------
-  // Number formatting
-  // ------------------------------------------------------------
-
   const toIndianFormat = (num?: number | null) => {
     const value = Number(num || 0);
 
@@ -69,10 +65,6 @@ function App() {
   const toCrores = (num?: number | null) => {
     return `${(Number(num || 0) / 10000000).toFixed(2)} Cr`;
   };
-
-  // ------------------------------------------------------------
-  // Fetch data from Netlify -> Turso
-  // ------------------------------------------------------------
 
   const fetchData = async () => {
     try {
@@ -95,7 +87,6 @@ function App() {
 
       setData(rows);
 
-      // Filter options
       const uniqueMovies = [
         ...new Set(
           rows
@@ -140,10 +131,6 @@ function App() {
     fetchData();
   }, []);
 
-  // ------------------------------------------------------------
-  // Dynamic Week columns
-  // ------------------------------------------------------------
-
   const weekColumns = useMemo(() => {
     const cols = new Set<string>();
 
@@ -167,10 +154,6 @@ function App() {
     });
   }, [data]);
 
-  // ------------------------------------------------------------
-  // Dynamic cumulative columns
-  // ------------------------------------------------------------
-
   const cumulativeColumns = useMemo(() => {
     const cols = new Set<string>();
 
@@ -186,16 +169,17 @@ function App() {
     });
 
     return [...cols].sort((a, b) => {
-      const countWeeks = (value: string) =>
-        (value.match(/_plus_w\d+/g) || []).length;
+      const getDepth = (value: string) => {
+        if (value === "cume_d1") return 0;
 
-      return countWeeks(a) - countWeeks(b);
+        const matches = value.match(/_plus_w\d+/g);
+
+        return matches ? matches.length : 0;
+      };
+
+      return getDepth(a) - getDepth(b);
     });
   }, [data]);
-
-  // ------------------------------------------------------------
-  // Friendly column names
-  // ------------------------------------------------------------
 
   const formatColumnName = (column: string) => {
     if (column === "movie_title") return "Movie";
@@ -210,6 +194,10 @@ function App() {
       return "Movie Total Gross";
     }
 
+    if (column === "total_gross") {
+      return "City Total Gross";
+    }
+
     if (column === "day_1_gross") {
       return "Day 1";
     }
@@ -219,20 +207,17 @@ function App() {
     }
 
     if (column.startsWith("cume_")) {
-      return column
-        .replace("cume_", "Cume ")
+      let label = column
+        .replace("cume_", "")
         .replaceAll("_plus_", "+")
         .replaceAll("_", " ")
-        .toUpperCase()
-        .replace("CUME", "Cume");
+        .toUpperCase();
+
+      return `Cume ${label}`;
     }
 
     return column;
   };
-
-  // ------------------------------------------------------------
-  // Filtering
-  // ------------------------------------------------------------
 
   const filteredData = useMemo(() => {
     const searchText = search.toLowerCase().trim();
@@ -290,10 +275,6 @@ function App() {
     selectedYears,
   ]);
 
-  // ------------------------------------------------------------
-  // Sorting
-  // ------------------------------------------------------------
-
   const sortedData = useMemo(() => {
     const output = [...filteredData];
 
@@ -309,10 +290,17 @@ function App() {
       const aValue = a[sortColumn];
       const bValue = b[sortColumn];
 
-      if (typeof aValue === "string") {
+      if (
+        typeof aValue === "string" ||
+        typeof bValue === "string"
+      ) {
         return sortAsc
-          ? aValue.localeCompare(String(bValue || ""))
-          : String(bValue || "").localeCompare(aValue);
+          ? String(aValue || "").localeCompare(
+              String(bValue || "")
+            )
+          : String(bValue || "").localeCompare(
+              String(aValue || "")
+            );
       }
 
       return sortAsc
@@ -331,10 +319,6 @@ function App() {
       setSortAsc(false);
     }
   };
-
-  // ------------------------------------------------------------
-  // Pagination
-  // ------------------------------------------------------------
 
   useEffect(() => {
     setPage(1);
@@ -355,10 +339,6 @@ function App() {
     page * itemsPerPage
   );
 
-  // ------------------------------------------------------------
-  // KPI calculations
-  // ------------------------------------------------------------
-
   const totalCumulativeGross = sortedData.reduce(
     (sum, row) =>
       sum + Number(row.cume_total || row.total_gross || 0),
@@ -377,10 +357,6 @@ function App() {
     0
   );
 
-  // ------------------------------------------------------------
-  // Movie-level chart aggregation
-  // ------------------------------------------------------------
-
   const groupedMovies = useMemo(() => {
     const result: Record<
       string,
@@ -394,8 +370,7 @@ function App() {
     > = {};
 
     filteredData.forEach((row) => {
-      const key =
-        `${row.movie_title}__${row.release_year}`;
+      const key = `${row.movie_title}__${row.release_year}`;
 
       if (!result[key]) {
         result[key] = {
@@ -421,15 +396,14 @@ function App() {
       .slice(0, 20);
   }, [filteredData]);
 
-  // ------------------------------------------------------------
-  // Loading/error state
-  // ------------------------------------------------------------
-
   if (loading) {
     return (
       <div className="App">
         <h1>🎬 BoxOfficeTrack</h1>
-        <p>Loading box office data...</p>
+        <div className="spinner"></div>
+        <p style={{ textAlign: "center" }}>
+          Loading box office data...
+        </p>
       </div>
     );
   }
@@ -450,10 +424,6 @@ function App() {
     );
   }
 
-  // ------------------------------------------------------------
-  // UI
-  // ------------------------------------------------------------
-
   return (
     <div className="App">
       <h1>🎬 BoxOfficeTrack</h1>
@@ -465,8 +435,6 @@ function App() {
         onChange={(e) => setSearch(e.target.value)}
         className="search-input"
       />
-
-      {/* Filters */}
 
       <div className="filters">
         <Select
@@ -515,8 +483,6 @@ function App() {
         />
       </div>
 
-      {/* KPI cards */}
-
       <div className="kpi-container">
         <div className="kpi-card">
           <h3>Total Cumulative Gross</h3>
@@ -553,8 +519,6 @@ function App() {
         </div>
       </div>
 
-      {/* Main table */}
-
       <h2
         style={{
           textAlign: "center",
@@ -573,7 +537,6 @@ function App() {
         <table>
           <thead>
             <tr>
-              {/* 1 */}
               <th
                 onClick={() =>
                   handleSort("movie_title")
@@ -582,7 +545,6 @@ function App() {
                 Movie
               </th>
 
-              {/* 2 */}
               <th
                 onClick={() =>
                   handleSort("city")
@@ -591,7 +553,6 @@ function App() {
                 City
               </th>
 
-              {/* 3 */}
               <th
                 onClick={() =>
                   handleSort("release_year")
@@ -600,7 +561,6 @@ function App() {
                 Release Year
               </th>
 
-              {/* 4 */}
               <th
                 onClick={() =>
                   handleSort("cume_total")
@@ -608,8 +568,6 @@ function App() {
               >
                 Total Cumulative Gross
               </th>
-
-              {/* Cumulative sequence */}
 
               {cumulativeColumns.map((column) => (
                 <th
@@ -622,8 +580,6 @@ function App() {
                 </th>
               ))}
 
-              {/* Day 1 */}
-
               <th
                 onClick={() =>
                   handleSort("day_1_gross")
@@ -631,8 +587,6 @@ function App() {
               >
                 Day 1
               </th>
-
-              {/* Week 1...Week 20 */}
 
               {weekColumns.map((column) => (
                 <th
@@ -645,7 +599,13 @@ function App() {
                 </th>
               ))}
 
-              {/* Movie total */}
+              <th
+                onClick={() =>
+                  handleSort("total_gross")
+                }
+              >
+                City Total Gross
+              </th>
 
               <th
                 onClick={() =>
@@ -716,8 +676,16 @@ function App() {
                   ₹
                   {toIndianFormat(
                     Number(
-                      row.movie_total_gross ||
-                        0
+                      row.total_gross || 0
+                    )
+                  )}
+                </td>
+
+                <td>
+                  ₹
+                  {toIndianFormat(
+                    Number(
+                      row.movie_total_gross || 0
                     )
                   )}
                 </td>
@@ -726,8 +694,6 @@ function App() {
           </tbody>
         </table>
       </div>
-
-      {/* Pagination */}
 
       {totalPages > 1 && (
         <div className="pagination">
@@ -742,11 +708,7 @@ function App() {
             Prev
           </button>
 
-          <span
-            style={{
-              margin: "0 15px",
-            }}
-          >
+          <span>
             Page {page} of {totalPages}
           </span>
 
@@ -765,8 +727,6 @@ function App() {
           </button>
         </div>
       )}
-
-      {/* Top Movies */}
 
       <h2
         style={{
@@ -816,7 +776,7 @@ function App() {
 
             <Bar
               dataKey="total"
-              name="Total Gross"
+              name="Movie Total Gross"
               fill="#198754"
             >
               <LabelList
