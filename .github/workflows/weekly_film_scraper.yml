@@ -8,10 +8,39 @@ on:
   workflow_dispatch:
 
 jobs:
-  scrape-and-sync:
+
+  scrape-parts:
+    name: Scrape ${{ matrix.name }}
+
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+
+      matrix:
+        include:
+          - name: 2021-2022
+            date_from: "2021-12-10"
+            date_to: "2022-12-31"
+
+          - name: 2023
+            date_from: "2023-01-01"
+            date_to: "2023-12-31"
+
+          - name: 2024
+            date_from: "2024-01-01"
+            date_to: "2024-12-31"
+
+          - name: 2025
+            date_from: "2025-01-01"
+            date_to: "2025-12-31"
+
+          - name: 2026
+            date_from: "2026-01-01"
+            date_to: "today"
+
     steps:
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -29,20 +58,69 @@ jobs:
         run: |
           mkdir -p output
 
-      - name: Run scraper and sync to Turso
+      - name: Scrape raw partition
+        run: |
+          python automation/film_info_scraper.py \
+            --from "${{ matrix.date_from }}" \
+            --to "${{ matrix.date_to }}" \
+            --out-dir output \
+            --out-prefix "part_${{ matrix.name }}" \
+            --raw-only
+
+      - name: Upload raw partition
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-${{ matrix.name }}
+          path: output/*_raw.csv
+          retention-days: 7
+
+
+  merge-and-sync:
+    name: Merge all years and sync Turso
+
+    needs: scrape-parts
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r automation/requirements.txt
+
+      - name: Download all raw partitions
+        uses: actions/download-artifact@v4
+        with:
+          pattern: raw-*
+          path: raw_parts
+          merge-multiple: true
+
+      - name: Create final output folder
+        run: |
+          mkdir -p output
+
+      - name: Merge, calculate and sync Turso
         env:
           TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
           TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
           TURSO_TABLE: film_collection_wide
         run: |
           python automation/film_info_scraper.py \
-            --from 2021-12-10 \
-            --to today \
+            --merge-raw-dir raw_parts \
             --out-dir output \
             --out-prefix weekly_all \
             --max-weeks 20
 
-      - name: Upload CSV backup
+      - name: Upload final CSV backup
         if: always()
         uses: actions/upload-artifact@v4
         with:
