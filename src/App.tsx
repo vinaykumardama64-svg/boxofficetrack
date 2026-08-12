@@ -228,8 +228,11 @@ function App() {
       setError("");
 
       const response = await fetch(
-        buildDataUrl()
-      );
+  buildDataUrl(),
+  {
+    cache: "no-store",
+  }
+);
 
       if (!response.ok) {
         throw new Error(
