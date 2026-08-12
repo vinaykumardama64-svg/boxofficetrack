@@ -1,4 +1,4 @@
-import { createClient } from "@tursodatabase/serverless/compat";
+import { connect } from "@tursodatabase/serverless";
 
 export default async () => {
   try {
@@ -6,38 +6,34 @@ export default async () => {
     const authToken = process.env.TURSO_AUTH_TOKEN;
 
     if (!url) {
-      throw new Error("TURSO_DATABASE_URL is not configured");
+      throw new Error("TURSO_DATABASE_URL is missing");
     }
 
     if (!authToken) {
-      throw new Error("TURSO_AUTH_TOKEN is not configured");
+      throw new Error("TURSO_AUTH_TOKEN is missing");
     }
 
-    const client = createClient({
+    const db = connect({
       url,
       authToken,
     });
 
-    const result = await client.execute(`
+    const stmt = db.prepare(`
       SELECT *
       FROM film_collection_wide
       ORDER BY movie_total_gross DESC
     `);
 
-    const rows = result.rows.map((row) => {
-      const output: Record<string, unknown> = {};
+    const result = await stmt.all();
 
-      result.columns.forEach((column, index) => {
-        output[column] = row[index];
-      });
-
-      return output;
-    });
+    console.log(
+      `Successfully fetched ${result.rows.length} rows from Turso`
+    );
 
     return new Response(
       JSON.stringify({
-        data: rows,
-        count: rows.length,
+        data: result.rows,
+        count: result.rows.length,
       }),
       {
         status: 200,
@@ -55,7 +51,7 @@ export default async () => {
         error:
           error instanceof Error
             ? error.message
-            : "Unable to fetch box office data",
+            : String(error),
       }),
       {
         status: 500,
