@@ -9,7 +9,7 @@
   --accent-color: #1976d2;
   --header-color: skyblue;
   --sticky-bg: #ffffff;
-  --total-bg: #fff3cd;
+  --movie-total-bg: #fff3cd;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,7 +19,7 @@
     --highlight-color: #1a1a1a;
     --table-border: #333333;
     --sticky-bg: #121212;
-    --total-bg: #332f20;
+    --movie-total-bg: #332f20;
   }
 }
 
@@ -76,16 +76,13 @@ h2 {
   gap: 1rem;
   margin-bottom: 2rem;
   width: 100%;
+
+  position: relative;
+  z-index: 100;
 }
 
 .filters > div {
   min-width: 0;
-}
-
-/* react-select needs a high z-index above sticky tables */
-.filters {
-  position: relative;
-  z-index: 100;
 }
 
 /* --------------------------------------------------
@@ -128,15 +125,50 @@ h2 {
 }
 
 /* --------------------------------------------------
-   Tables
+   Tabs
 -------------------------------------------------- */
 
-/*
-  App.tsx already wraps the main table in:
-  overflowX: auto
+.view-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 2rem 0 1rem;
+  flex-wrap: wrap;
+}
 
-  These rules make the wide Week/Cumulative table usable.
-*/
+.view-tab {
+  padding: 10px 22px;
+  border-radius: 6px;
+  border: 1px solid #1976d2;
+  cursor: pointer;
+  background: #ffffff;
+  color: #1976d2;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.view-tab:hover {
+  background-color: #eef6ff;
+}
+
+.view-tab.active {
+  background: #1976d2;
+  color: #ffffff;
+}
+
+/* --------------------------------------------------
+   Table container
+-------------------------------------------------- */
+
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+/* --------------------------------------------------
+   Table
+-------------------------------------------------- */
 
 table {
   width: max-content;
@@ -181,108 +213,70 @@ tbody tr:hover td {
 }
 
 /* --------------------------------------------------
-   Important first columns
+   Movie title
 -------------------------------------------------- */
 
-/* Movie */
-thead th:nth-child(1),
-tbody td:nth-child(1) {
-  position: sticky;
-  left: 0;
-  min-width: 220px;
-  max-width: 220px;
-  z-index: 15;
-}
+.movie-cell {
+  white-space: normal !important;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  line-height: 1.35;
 
-thead th:nth-child(1) {
-  z-index: 35;
-  background-color: var(--header-color);
-}
+  min-width: 240px !important;
+  width: 240px;
+  max-width: 300px;
 
-tbody td:nth-child(1) {
-  background-color: var(--sticky-bg);
   text-align: left;
   font-weight: 600;
 }
 
-/* City */
-thead th:nth-child(2),
-tbody td:nth-child(2) {
-  position: sticky;
-  left: 220px;
-  min-width: 150px;
-  max-width: 150px;
-  z-index: 14;
-}
+/* --------------------------------------------------
+   Movie Total Gross
+   Wider because values can be very large
+-------------------------------------------------- */
 
-thead th:nth-child(2) {
-  z-index: 34;
-  background-color: var(--header-color);
-}
-
-tbody td:nth-child(2) {
-  background-color: var(--sticky-bg);
-}
-
-/* Release Year */
-thead th:nth-child(3),
-tbody td:nth-child(3) {
-  position: sticky;
-  left: 370px;
-  min-width: 110px;
-  max-width: 110px;
-  z-index: 13;
-}
-
-thead th:nth-child(3) {
-  z-index: 33;
-  background-color: var(--header-color);
-}
-
-tbody td:nth-child(3) {
-  background-color: var(--sticky-bg);
-}
-
-/* Total Cumulative Gross */
-thead th:nth-child(4),
-tbody td:nth-child(4) {
-  position: sticky;
-  left: 480px;
-  min-width: 180px;
-  max-width: 180px;
-  z-index: 12;
+.movie-total-column {
+  background-color: var(--movie-total-bg) !important;
   font-weight: 700;
-}
 
-thead th:nth-child(4) {
-  z-index: 32;
-  background-color: #ffd966;
-}
+  white-space: nowrap;
 
-tbody td:nth-child(4) {
-  background-color: var(--total-bg);
-}
+  min-width: 230px !important;
+  width: 230px;
+  max-width: 260px;
 
-/* Small shadow after sticky section */
-thead th:nth-child(4),
-tbody td:nth-child(4) {
-  box-shadow: 4px 0 5px rgba(0, 0, 0, 0.08);
-}
+  padding-left: 18px !important;
+  padding-right: 18px !important;
 
-/* Keep sticky cells colored on hover */
-
-tbody tr:hover td:nth-child(1),
-tbody tr:hover td:nth-child(2),
-tbody tr:hover td:nth-child(3) {
-  background-color: var(--highlight-color);
-}
-
-tbody tr:hover td:nth-child(4) {
-  background-color: var(--total-bg);
+  text-align: center;
 }
 
 /* --------------------------------------------------
-   Sorted column indicators
+   Sticky first column
+-------------------------------------------------- */
+
+thead th:first-child,
+tbody td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 15;
+}
+
+thead th:first-child {
+  z-index: 35;
+  background-color: var(--header-color);
+}
+
+tbody td:first-child {
+  background-color: var(--sticky-bg);
+}
+
+tbody tr:hover td:first-child {
+  background-color: var(--highlight-color);
+}
+
+/* --------------------------------------------------
+   Sorted indicators
 -------------------------------------------------- */
 
 thead th.sorted-asc::after {
@@ -362,14 +356,6 @@ tr.highlight {
 }
 
 /* --------------------------------------------------
-   Charts
--------------------------------------------------- */
-
-.recharts-wrapper {
-  margin: auto;
-}
-
-/* --------------------------------------------------
    Mobile
 -------------------------------------------------- */
 
@@ -401,46 +387,21 @@ tr.highlight {
     font-size: 0.82rem;
   }
 
-  /*
-    Disable sticky left columns on small screens.
-    Horizontal scrolling is easier on phones.
-  */
+  .movie-cell {
+    min-width: 180px !important;
+    width: 180px;
+    max-width: 220px;
+  }
 
-  thead th:nth-child(1),
-  tbody td:nth-child(1),
-  thead th:nth-child(2),
-  tbody td:nth-child(2),
-  thead th:nth-child(3),
-  tbody td:nth-child(3),
-  thead th:nth-child(4),
-  tbody td:nth-child(4) {
+  .movie-total-column {
+    min-width: 190px !important;
+    width: 190px;
+    max-width: 210px;
+  }
+
+  /* Easier horizontal scroll on mobile */
+  thead th:first-child,
+  tbody td:first-child {
     position: static;
-    min-width: 130px;
-    max-width: none;
-    box-shadow: none;
   }
-
-  thead th:nth-child(1),
-  tbody td:nth-child(1) {
-    min-width: 190px;
-  }
-}
-/* Movie title should wrap instead of overflowing */
-.movie-cell {
-  white-space: normal !important;
-  overflow-wrap: anywhere;
-  word-break: normal;
-  line-height: 1.35;
-  min-width: 220px;
-  max-width: 280px;
-  text-align: left;
-}
-
-/* Sticky first column must also support wrapped titles */
-tbody td:nth-child(1) {
-  white-space: normal;
-  overflow-wrap: anywhere;
-  word-break: normal;
-  min-width: 220px;
-  max-width: 280px;
 }
