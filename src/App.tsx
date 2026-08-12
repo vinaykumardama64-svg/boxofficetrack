@@ -7,11 +7,9 @@ interface MovieData {
   city: string;
   state?: string;
   release_year: number;
-
   day_1_gross?: number | null;
   total_gross?: number | null;
   movie_total_gross?: number | null;
-
   [key: string]: string | number | null | undefined;
 }
 
@@ -20,457 +18,36 @@ interface SelectOption {
   label: string;
 }
 
+interface PaginationInfo {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasMore: boolean;
+}
+
+interface StatsInfo {
+  grandMovieTotal: number;
+  baseMovies: number;
+  versions: number;
+  cityRecords: number;
+}
+
 type ViewMode = "movies" | "dubbed" | "cities";
 
 const API_URL = "/.netlify/functions/boxoffice";
 const ITEMS_PER_PAGE = 25;
 
-// ============================================================
-// FILMINFORMATION CITY / STATION MAP
-// Checked first.
-// ============================================================
-
-const FILMINFO_CITY_STATE_MAP: Record<string, string> = {
-  // Maharashtra
-  BOMBAY: "Maharashtra",
-  MUMBAI: "Maharashtra",
-  KOLHAPUR: "Maharashtra",
-  NASIK: "Maharashtra",
-  NASHIK: "Maharashtra",
-  PUNE: "Maharashtra",
-  THANE: "Maharashtra",
-  NAGPUR: "Maharashtra",
-  AURANGABAD: "Maharashtra",
-  "CHHATRAPATI SAMBHAJINAGAR": "Maharashtra",
-  PANDHARPUR: "Maharashtra",
-  SOLAPUR: "Maharashtra",
-  AMRAVATI: "Maharashtra",
-  AKOLA: "Maharashtra",
-  JALGAON: "Maharashtra",
-  LATUR: "Maharashtra",
-  SANGLI: "Maharashtra",
-  SATARA: "Maharashtra",
-
-  // Delhi
-  DELHI: "Delhi",
-  "NEW DELHI": "Delhi",
-
-  // Haryana
-  ROHTAK: "Haryana",
-  SIRSA: "Haryana",
-  GURGAON: "Haryana",
-  GURUGRAM: "Haryana",
-  FARIDABAD: "Haryana",
-  PANIPAT: "Haryana",
-  AMBALA: "Haryana",
-  KARNAL: "Haryana",
-  HISAR: "Haryana",
-
-  // Chandigarh
-  CHANDIGARH: "Chandigarh",
-
-  // Punjab
-  AMRITSAR: "Punjab",
-  LUDHIANA: "Punjab",
-  JALANDHAR: "Punjab",
-  PATIALA: "Punjab",
-  BATHINDA: "Punjab",
-  BHATINDA: "Punjab",
-  MOHALI: "Punjab",
-
-  // Uttar Pradesh
-  AGRA: "Uttar Pradesh",
-  ALLAHABAD: "Uttar Pradesh",
-  PRAYAGRAJ: "Uttar Pradesh",
-  BAREILLY: "Uttar Pradesh",
-  GHAZIABAD: "Uttar Pradesh",
-  KANPUR: "Uttar Pradesh",
-  LUCKNOW: "Uttar Pradesh",
-  MEERUT: "Uttar Pradesh",
-  NOIDA: "Uttar Pradesh",
-  VARANASI: "Uttar Pradesh",
-  GORAKHPUR: "Uttar Pradesh",
-  ALIGARH: "Uttar Pradesh",
-  MORADABAD: "Uttar Pradesh",
-
-  // Madhya Pradesh
-  GWALIOR: "Madhya Pradesh",
-  INDORE: "Madhya Pradesh",
-  BHOPAL: "Madhya Pradesh",
-  JABALPUR: "Madhya Pradesh",
-  UJJAIN: "Madhya Pradesh",
-
-  // Rajasthan
-  JODHPUR: "Rajasthan",
-  BHARATPUR: "Rajasthan",
-  AJMER: "Rajasthan",
-  JAIPUR: "Rajasthan",
-  KOTA: "Rajasthan",
-  UDAIPUR: "Rajasthan",
-  BEHROR: "Rajasthan",
-  JHUNJHUNU: "Rajasthan",
-  BIKANER: "Rajasthan",
-  ALWAR: "Rajasthan",
-  SIKAR: "Rajasthan",
-
-  // Gujarat
-  AHMEDABAD: "Gujarat",
-  SURAT: "Gujarat",
-  BARODA: "Gujarat",
-  VADODARA: "Gujarat",
-  RAJKOT: "Gujarat",
-  BHAVNAGAR: "Gujarat",
-  JAMNAGAR: "Gujarat",
-  ANAND: "Gujarat",
-
-  // West Bengal
-  CALCUTTA: "West Bengal",
-  KOLKATA: "West Bengal",
-  HOWRAH: "West Bengal",
-  DURGAPUR: "West Bengal",
-  ASANSOL: "West Bengal",
-  SILIGURI: "West Bengal",
-
-  // Karnataka
-  BANGALORE: "Karnataka",
-  BENGALURU: "Karnataka",
-  MANGALORE: "Karnataka",
-  MANGALURU: "Karnataka",
-  MYSORE: "Karnataka",
-  MYSURU: "Karnataka",
-  RAICHUR: "Karnataka",
-  HUBLI: "Karnataka",
-  HUBBALLI: "Karnataka",
-  BELGAUM: "Karnataka",
-  BELAGAVI: "Karnataka",
-  BELLARY: "Karnataka",
-  BALLARI: "Karnataka",
-  SHIMOGA: "Karnataka",
-  SHIVAMOGGA: "Karnataka",
-  DAVANGERE: "Karnataka",
-  DHARWAD: "Karnataka",
-  GULBARGA: "Karnataka",
-
-  // Kerala
-  KOZHIKODE: "Kerala",
-  CALICUT: "Kerala",
-  COCHIN: "Kerala",
-  KOCHI: "Kerala",
-  TRIVANDRUM: "Kerala",
-  THIRUVANANTHAPURAM: "Kerala",
-  THRISSUR: "Kerala",
-  KOTTAYAM: "Kerala",
-  ALAPPUZHA: "Kerala",
-
-  // Tamil Nadu
-  MADRAS: "Tamil Nadu",
-  CHENNAI: "Tamil Nadu",
-  COIMBATORE: "Tamil Nadu",
-  MADURAI: "Tamil Nadu",
-  SALEM: "Tamil Nadu",
-  VELLORE: "Tamil Nadu",
-  CUDDALORE: "Tamil Nadu",
-  TRICHY: "Tamil Nadu",
-  TIRUCHIRAPPALLI: "Tamil Nadu",
-  TIRUNELVELI: "Tamil Nadu",
-
-  // Telangana
-  HYDERABAD: "Telangana",
-  SECUNDERABAD: "Telangana",
-  WARANGAL: "Telangana",
-  NIZAMABAD: "Telangana",
-  ARMOOR: "Telangana",
-  KARIMNAGAR: "Telangana",
-  KHAMMAM: "Telangana",
-  NALGONDA: "Telangana",
-  MAHBUBNAGAR: "Telangana",
-
-  // Andhra Pradesh
-  VIJAYAWADA: "Andhra Pradesh",
-  VISAKHAPATNAM: "Andhra Pradesh",
-  VIZAG: "Andhra Pradesh",
-  GAJUWAKA: "Andhra Pradesh",
-  NARSIPATNAM: "Andhra Pradesh",
-  GUNTUR: "Andhra Pradesh",
-  TIRUPATI: "Andhra Pradesh",
-  NELLORE: "Andhra Pradesh",
-  KURNOOL: "Andhra Pradesh",
-  KADAPA: "Andhra Pradesh",
-  CUDDAPAH: "Andhra Pradesh",
-  KAKINADA: "Andhra Pradesh",
-  RAJAHMUNDRY: "Andhra Pradesh",
-  RAJAMAHENDRAVARAM: "Andhra Pradesh",
-  VIZIANAGARAM: "Andhra Pradesh",
-  SRIKAKULAM: "Andhra Pradesh",
-  BHIMAVARAM: "Andhra Pradesh",
-  ELURU: "Andhra Pradesh",
-  ONGOLE: "Andhra Pradesh",
-
-  // Odisha
-  BHUBANESWAR: "Odisha",
-  BHUBANESHWAR: "Odisha",
-  CUTTACK: "Odisha",
-  ROURKELA: "Odisha",
-
-  // Bihar
-  PATNA: "Bihar",
-  GAYA: "Bihar",
-
-  // Jharkhand
-  RANCHI: "Jharkhand",
-  JAMSHEDPUR: "Jharkhand",
-  DHANBAD: "Jharkhand",
-
-  // Chhattisgarh
-  RAIPUR: "Chhattisgarh",
-  BHILAI: "Chhattisgarh",
-
-  // Assam
-  GUWAHATI: "Assam",
-
-  // Uttarakhand
-  DEHRADUN: "Uttarakhand",
-  HARIDWAR: "Uttarakhand",
-
-  // Jammu & Kashmir
-  JAMMU: "Jammu and Kashmir",
-  SRINAGAR: "Jammu and Kashmir",
-
-  // Goa
-  GOA: "Goa",
-
-  // Puducherry
-  PONDICHERRY: "Puducherry",
-  PUDUCHERRY: "Puducherry",
-};
-
-// ============================================================
-// NORMAL FALLBACK MAP
-// Used only if FilmInformation map has no match.
-// ============================================================
-
-const NORMAL_CITY_STATE_MAP: Record<string, string> = {
-  // Andhra Pradesh
-  anantapur: "Andhra Pradesh",
-  bhimavaram: "Andhra Pradesh",
-  eluru: "Andhra Pradesh",
-  gajuwaka: "Andhra Pradesh",
-  guntur: "Andhra Pradesh",
-  kadapa: "Andhra Pradesh",
-  kakinada: "Andhra Pradesh",
-  kurnool: "Andhra Pradesh",
-  narsipatnam: "Andhra Pradesh",
-  nellore: "Andhra Pradesh",
-  ongole: "Andhra Pradesh",
-  rajahmundry: "Andhra Pradesh",
-  rajamahendravaram: "Andhra Pradesh",
-  srikakulam: "Andhra Pradesh",
-  tirupati: "Andhra Pradesh",
-  vijayawada: "Andhra Pradesh",
-  visakhapatnam: "Andhra Pradesh",
-  vizag: "Andhra Pradesh",
-  vizianagaram: "Andhra Pradesh",
-
-  // Telangana
-  hyderabad: "Telangana",
-  secunderabad: "Telangana",
-  nizamabad: "Telangana",
-  armoor: "Telangana",
-  warangal: "Telangana",
-  karimnagar: "Telangana",
-  khammam: "Telangana",
-  nalgonda: "Telangana",
-  mahbubnagar: "Telangana",
-
-  // Tamil Nadu
-  chennai: "Tamil Nadu",
-  madras: "Tamil Nadu",
-  coimbatore: "Tamil Nadu",
-  madurai: "Tamil Nadu",
-  salem: "Tamil Nadu",
-  vellore: "Tamil Nadu",
-  cuddalore: "Tamil Nadu",
-  trichy: "Tamil Nadu",
-  tiruchirappalli: "Tamil Nadu",
-  tirunelveli: "Tamil Nadu",
-
-  // Karnataka
-  bangalore: "Karnataka",
-  bengaluru: "Karnataka",
-  mangalore: "Karnataka",
-  mangaluru: "Karnataka",
-  mysore: "Karnataka",
-  mysuru: "Karnataka",
-  raichur: "Karnataka",
-  hubli: "Karnataka",
-  hubballi: "Karnataka",
-  belgaum: "Karnataka",
-  belagavi: "Karnataka",
-  bellary: "Karnataka",
-  ballari: "Karnataka",
-  shimoga: "Karnataka",
-  shivamogga: "Karnataka",
-  davangere: "Karnataka",
-  dharwad: "Karnataka",
-  gulbarga: "Karnataka",
-
-  // Kerala
-  kochi: "Kerala",
-  cochin: "Kerala",
-  thrissur: "Kerala",
-  kozhikode: "Kerala",
-  calicut: "Kerala",
-  trivandrum: "Kerala",
-  thiruvananthapuram: "Kerala",
-  kottayam: "Kerala",
-  alappuzha: "Kerala",
-
-  // Maharashtra
-  mumbai: "Maharashtra",
-  bombay: "Maharashtra",
-  pune: "Maharashtra",
-  thane: "Maharashtra",
-  nagpur: "Maharashtra",
-  nashik: "Maharashtra",
-  nasik: "Maharashtra",
-  kolhapur: "Maharashtra",
-  solapur: "Maharashtra",
-  aurangabad: "Maharashtra",
-  "chhatrapati sambhajinagar": "Maharashtra",
-
-  // Gujarat
-  ahmedabad: "Gujarat",
-  surat: "Gujarat",
-  vadodara: "Gujarat",
-  baroda: "Gujarat",
-  rajkot: "Gujarat",
-  bhavnagar: "Gujarat",
-
-  // West Bengal
-  kolkata: "West Bengal",
-  calcutta: "West Bengal",
-  howrah: "West Bengal",
-  durgapur: "West Bengal",
-  asansol: "West Bengal",
-
-  // Delhi
-  delhi: "Delhi",
-  "new delhi": "Delhi",
-
-  // Rajasthan
-  jaipur: "Rajasthan",
-  jodhpur: "Rajasthan",
-  kota: "Rajasthan",
-  udaipur: "Rajasthan",
-  ajmer: "Rajasthan",
-  bharatpur: "Rajasthan",
-
-  // Uttar Pradesh
-  lucknow: "Uttar Pradesh",
-  kanpur: "Uttar Pradesh",
-  agra: "Uttar Pradesh",
-  noida: "Uttar Pradesh",
-  ghaziabad: "Uttar Pradesh",
-  meerut: "Uttar Pradesh",
-  varanasi: "Uttar Pradesh",
-  prayagraj: "Uttar Pradesh",
-  allahabad: "Uttar Pradesh",
-
-  // Madhya Pradesh
-  gwalior: "Madhya Pradesh",
-  indore: "Madhya Pradesh",
-  bhopal: "Madhya Pradesh",
-  jabalpur: "Madhya Pradesh",
-
-  // Chandigarh
-  chandigarh: "Chandigarh",
-
-  // Punjab
-  amritsar: "Punjab",
-  ludhiana: "Punjab",
-  jalandhar: "Punjab",
-  patiala: "Punjab",
-
-  // Haryana
-  rohtak: "Haryana",
-  sirsa: "Haryana",
-  gurgaon: "Haryana",
-  gurugram: "Haryana",
-  faridabad: "Haryana",
-
-  // Bihar
-  patna: "Bihar",
-
-  // Jharkhand
-  ranchi: "Jharkhand",
-  jamshedpur: "Jharkhand",
-  dhanbad: "Jharkhand",
-
-  // Odisha
-  bhubaneswar: "Odisha",
-  bhubaneshwar: "Odisha",
-  cuttack: "Odisha",
-
-  // Chhattisgarh
-  raipur: "Chhattisgarh",
-  bhilai: "Chhattisgarh",
-
-  // Assam
-  guwahati: "Assam",
-
-  // Uttarakhand
-  dehradun: "Uttarakhand",
-
-  // Goa
-  goa: "Goa",
-
-  // Puducherry
-  pondicherry: "Puducherry",
-  puducherry: "Puducherry",
-};
-
-// ============================================================
-// STATE LOOKUP
-// ============================================================
-
-const normalizeCity = (city: string) =>
-  String(city || "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const getStateFromCity = (city: string) => {
-  const cleanCity = normalizeCity(city);
-
-  if (!cleanCity) {
-    return "Unknown";
-  }
-
-  // 1. FilmInformation spelling/label
-  const siteKey = cleanCity.toUpperCase();
-
-  if (FILMINFO_CITY_STATE_MAP[siteKey]) {
-    return FILMINFO_CITY_STATE_MAP[siteKey];
-  }
-
-  // 2. Normal fallback
-  const normalKey = cleanCity.toLowerCase();
-
-  if (NORMAL_CITY_STATE_MAP[normalKey]) {
-    return NORMAL_CITY_STATE_MAP[normalKey];
-  }
-
-  // 3. Keep unresolved city visible
-  return "Unknown";
-};
-
 function App() {
-  const [data, setData] = useState<MovieData[]>([]);
+  const [rows, setRows] = useState<MovieData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filtersLoading, setFiltersLoading] = useState(true);
   const [error, setError] = useState("");
 
   const [viewMode, setViewMode] = useState<ViewMode>("movies");
 
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const [movies, setMovies] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
@@ -489,6 +66,23 @@ function App() {
 
   const [sortAsc, setSortAsc] = useState(false);
 
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    page: 1,
+    limit: ITEMS_PER_PAGE,
+    total: 0,
+    totalPages: 1,
+    hasMore: false,
+  });
+
+  const [stats, setStats] = useState<StatsInfo>({
+    grandMovieTotal: 0,
+    baseMovies: 0,
+    versions: 0,
+    cityRecords: 0,
+  });
+
+  const [weekColumns, setWeekColumns] = useState<string[]>([]);
+
   // ============================================================
   // Formatting
   // ============================================================
@@ -502,50 +96,130 @@ function App() {
     `${(Number(num || 0) / 10000000).toFixed(2)} Cr`;
 
   // ============================================================
-  // Base-title logic
+  // Search debounce
   // ============================================================
 
-  const getBaseMovieTitle = (title: string) => {
-    let base = String(title || "").trim();
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 300);
 
-    let changed = true;
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [search]);
 
-    while (changed) {
-      changed = false;
+  // ============================================================
+  // Filter options
+  // ============================================================
 
-      const match = base.match(
-        /\s*\(([^()]*)\)\s*$/
+  const fetchFilters = async () => {
+    try {
+      setFiltersLoading(true);
+
+      const response = await fetch(
+        `${API_URL}?view=filters`
       );
 
-      if (!match) {
-        break;
-      }
-
-      const qualifier = String(match[1] || "")
-        .toLowerCase()
-        .replace(/\./g, "")
-        .replace(/\s+/g, " ")
-        .trim();
-
-      const isVersionQualifier =
-        /dubbed|revived|re[\s-]?release|r\s*r|telugu|tamil|kannada|malayalam|hindi|marathi|bengali|punjabi|odia|bhojpuri|english/.test(
-          qualifier
+      if (!response.ok) {
+        throw new Error(
+          `Could not load filters (${response.status})`
         );
-
-      if (isVersionQualifier) {
-        base = base
-          .slice(0, match.index)
-          .trim();
-
-        changed = true;
       }
+
+      const result = await response.json();
+
+      setMovies(result.movies || []);
+      setCities(result.cities || []);
+      setStates(result.states || []);
+      setYears(result.years || []);
+    } catch (err) {
+      console.error(err);
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not load filters."
+      );
+    } finally {
+      setFiltersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFilters();
+  }, []);
+
+  // ============================================================
+  // Build API URL
+  // ============================================================
+
+  const buildDataUrl = () => {
+    const params = new URLSearchParams();
+
+    params.set("view", viewMode);
+    params.set("page", String(page));
+    params.set("limit", String(ITEMS_PER_PAGE));
+    params.set("sort", sortColumn);
+    params.set("dir", sortAsc ? "asc" : "desc");
+
+    if (debouncedSearch) {
+      params.set(
+        "search",
+        debouncedSearch
+      );
     }
 
-    return base;
+    if (selectedMovies.length > 0) {
+      params.set(
+        "movies",
+        selectedMovies
+          .map((item) =>
+            encodeURIComponent(item.value)
+          )
+          .join("|")
+      );
+    }
+
+    if (selectedCities.length > 0) {
+      params.set(
+        "cities",
+        selectedCities
+          .map((item) =>
+            encodeURIComponent(item.value)
+          )
+          .join("|")
+      );
+    }
+
+    if (selectedStates.length > 0) {
+      params.set(
+        "states",
+        selectedStates
+          .map((item) =>
+            encodeURIComponent(item.value)
+          )
+          .join("|")
+      );
+    }
+
+    if (selectedYears.length > 0) {
+      params.set(
+        "years",
+        selectedYears
+          .map((item) =>
+            encodeURIComponent(item.value)
+          )
+          .join("|")
+      );
+    }
+
+    return `${API_URL}?${params.toString()}`;
   };
 
   // ============================================================
-  // Fetch + State enrichment
+  // Fetch only the active tab/page
   // ============================================================
 
   const fetchData = async () => {
@@ -553,123 +227,66 @@ function App() {
       setLoading(true);
       setError("");
 
-      // Netlify Functions should not return the entire Turso table
-      // in one huge JSON response. Fetch the full dataset safely
-      // in smaller pages and combine them in React.
-      const PAGE_SIZE = 1000;
+      const response = await fetch(
+        buildDataUrl()
+      );
 
-      let currentPage = 1;
-      let hasMore = true;
-
-      const allRows: MovieData[] = [];
-
-      while (hasMore) {
-        const response = await fetch(
-          `${API_URL}?page=${currentPage}&limit=${PAGE_SIZE}`
+      if (!response.ok) {
+        throw new Error(
+          `Could not load box office data (${response.status})`
         );
-
-        if (!response.ok) {
-          throw new Error(
-            `Could not load box office data (${response.status})`
-          );
-        }
-
-        const result = await response.json();
-
-        const pageRows: MovieData[] = Array.isArray(result)
-          ? result
-          : result.data || [];
-
-        allRows.push(...pageRows);
-
-        // Compatibility:
-        // New API returns pagination.hasMore.
-        // If an older response shape is ever returned, stop after
-        // a short page rather than looping forever.
-        if (result?.pagination) {
-          hasMore = Boolean(result.pagination.hasMore);
-        } else {
-          hasMore = pageRows.length === PAGE_SIZE;
-        }
-
-        console.log(
-          `Loaded API page ${currentPage}: ` +
-          `${pageRows.length} rows; running total ${allRows.length}`
-        );
-
-        currentPage += 1;
-
-        // Safety guard against an accidental endless API loop.
-        if (currentPage > 500) {
-          throw new Error(
-            "Too many API pages requested. Pagination may be misconfigured."
-          );
-        }
       }
 
-      const rows: MovieData[] = allRows.map((row) => ({
-        ...row,
-        state: getStateFromCity(row.city),
-      }));
+      const result = await response.json();
 
-      setData(rows);
-
-      setMovies(
-        [
-          ...new Set(
-            rows
-              .map((row) => row.movie_title)
-              .filter(Boolean)
-          ),
-        ].sort()
+      setRows(
+        Array.isArray(result.data)
+          ? result.data
+          : []
       );
 
-      setCities(
-        [
-          ...new Set(
-            rows
-              .map((row) => row.city)
-              .filter(Boolean)
+      if (result.pagination) {
+        setPagination({
+          page: Number(result.pagination.page || 1),
+          limit: Number(
+            result.pagination.limit ||
+              ITEMS_PER_PAGE
           ),
-        ].sort()
-      );
-
-      setStates(
-        [
-          ...new Set(
-            rows
-              .map((row) => row.state)
-              .filter(
-                (state): state is string =>
-                  Boolean(state)
-              )
+          total: Number(result.pagination.total || 0),
+          totalPages: Math.max(
+            1,
+            Number(
+              result.pagination.totalPages || 1
+            )
           ),
-        ].sort((a, b) => {
-          // Keep Unknown at the end
-          if (a === "Unknown" && b !== "Unknown") {
-            return 1;
-          }
-
-          if (b === "Unknown" && a !== "Unknown") {
-            return -1;
-          }
-
-          return a.localeCompare(b);
-        })
-      );
-
-      setYears(
-        [
-          ...new Set(
-            rows
-              .map((row) => Number(row.release_year))
-              .filter(
-                (year) =>
-                  !Number.isNaN(year)
-              )
+          hasMore: Boolean(
+            result.pagination.hasMore
           ),
-        ].sort((a, b) => b - a)
-      );
+        });
+      }
+
+      if (result.stats) {
+        setStats({
+          grandMovieTotal: Number(
+            result.stats.grandMovieTotal || 0
+          ),
+          baseMovies: Number(
+            result.stats.baseMovies || 0
+          ),
+          versions: Number(
+            result.stats.versions || 0
+          ),
+          cityRecords: Number(
+            result.stats.cityRecords || 0
+          ),
+        });
+      }
+
+      if (Array.isArray(result.weekColumns)) {
+        setWeekColumns(
+          result.weekColumns
+        );
+      }
     } catch (err) {
       console.error(err);
 
@@ -685,142 +302,84 @@ function App() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [
+    viewMode,
+    page,
+    sortColumn,
+    sortAsc,
+    debouncedSearch,
+    selectedMovies,
+    selectedCities,
+    selectedStates,
+    selectedYears,
+  ]);
 
   // ============================================================
-  // Week columns
-  // ============================================================
-
-  const weekColumns = useMemo(() => {
-    const cols = new Set<string>();
-
-    data.forEach((row) => {
-      Object.keys(row).forEach((key) => {
-        const match = key.match(/^week_(\d+)$/);
-
-        if (!match) {
-          return;
-        }
-
-        const week = Number(match[1]);
-
-        if (week >= 1 && week <= 20) {
-          cols.add(key);
-        }
-      });
-    });
-
-    return [...cols].sort(
-      (a, b) =>
-        Number(a.replace("week_", "")) -
-        Number(b.replace("week_", ""))
-    );
-  }, [data]);
-
-  // ============================================================
-  // Cumulative columns
+  // Cumulative columns derived from available week columns
   // ============================================================
 
   const cumulativeColumns = useMemo(() => {
-    const cols = new Set<string>();
+    const cols: string[] = [];
 
-    data.forEach((row) => {
-      Object.keys(row).forEach((key) => {
-        if (
-          key.startsWith("cume_") &&
-          key !== "cume_total"
-        ) {
-          cols.add(key);
-        }
-      });
-    });
+    cols.push("cume_d1");
 
-    const depth = (key: string) => {
-      if (key === "cume_d1") {
-        return 0;
+    weekColumns.forEach((_, index) => {
+      const tokens = ["cume_d1"];
+
+      for (let i = 1; i <= index + 1; i++) {
+        tokens.push(`w${i}`);
       }
 
-      const matches = key.match(/_plus_w\d+/g);
-
-      return matches
-        ? matches.length
-        : 0;
-    };
-
-    return [...cols].sort(
-      (a, b) =>
-        depth(a) - depth(b)
-    );
-  }, [data]);
-
-  // ============================================================
-  // Universal Total = Day1 + Week1...Week20
-  // ============================================================
-
-  const calculateWeeklyTotal = (row: MovieData) => {
-    let total = Number(row.day_1_gross || 0);
-
-    weekColumns.forEach((column) => {
-      total += Number(row[column] || 0);
+      cols.push(
+        tokens.join("_plus_")
+      );
     });
 
-    return total;
-  };
-
-  // ============================================================
-  // Rebuild cumulative values
-  // ============================================================
-
-  const rebuildProgression = (
-    source: MovieData
-  ): MovieData => {
-    const row: MovieData = {
-      ...source,
-    };
-
-    const day1 = Number(row.day_1_gross || 0);
-
-    let running = day1;
-
-    cumulativeColumns.forEach(
-      (column, index) => {
-        if (index === 0) {
-          row[column] = day1;
-          return;
-        }
-
-        const weekColumn =
-          weekColumns[index - 1];
-
-        if (weekColumn) {
-          running += Number(row[weekColumn] || 0);
-        }
-
-        row[column] = running;
-      }
-    );
-
-    row.movie_total_gross =
-      calculateWeeklyTotal(row);
-
-    return row;
-  };
+    return cols;
+  }, [weekColumns]);
 
   // ============================================================
   // Labels
   // ============================================================
 
-  const formatColumnName = (column: string) => {
-    if (column === "movie_title") return "Movie";
-    if (column === "city") return "City";
-    if (column === "state") return "State";
-    if (column === "release_year") return "Release Year";
-    if (column === "movie_total_gross") return "Movie Total Gross";
-    if (column === "total_gross") return "City Total Gross";
-    if (column === "day_1_gross") return "Day 1";
+  const formatColumnName = (
+    column: string
+  ) => {
+    if (column === "movie_title") {
+      return "Movie";
+    }
+
+    if (column === "city") {
+      return "City";
+    }
+
+    if (column === "state") {
+      return "State";
+    }
+
+    if (column === "release_year") {
+      return "Release Year";
+    }
+
+    if (
+      column === "movie_total_gross"
+    ) {
+      return "Movie Total Gross";
+    }
+
+    if (column === "total_gross") {
+      return "City Total Gross";
+    }
+
+    if (column === "day_1_gross") {
+      return "Day 1";
+    }
 
     if (column.startsWith("week_")) {
-      return `Week ${column.replace("week_", "")}`;
+      return `Week ${column.replace(
+        "week_",
+        ""
+      )}`;
     }
 
     if (column.startsWith("cume_")) {
@@ -837,316 +396,12 @@ function App() {
   };
 
   // ============================================================
-  // Filtering
-  // ============================================================
-
-  const filteredRawData = useMemo(() => {
-    const searchText = search
-      .toLowerCase()
-      .trim();
-
-    return data.filter((row) => {
-      if (selectedMovies.length > 0) {
-        const rowBase =
-          getBaseMovieTitle(
-            row.movie_title
-          ).toLowerCase();
-
-        const matched =
-          selectedMovies.some(
-            (item) =>
-              getBaseMovieTitle(
-                item.value
-              ).toLowerCase() ===
-              rowBase
-          );
-
-        if (!matched) {
-          return false;
-        }
-      }
-
-      if (
-        selectedCities.length > 0 &&
-        !selectedCities.some(
-          (item) =>
-            item.value === row.city
-        )
-      ) {
-        return false;
-      }
-
-      if (
-        selectedStates.length > 0 &&
-        !selectedStates.some(
-          (item) =>
-            item.value === row.state
-        )
-      ) {
-        return false;
-      }
-
-      if (
-        selectedYears.length > 0 &&
-        !selectedYears.some(
-          (item) =>
-            Number(item.value) ===
-            Number(row.release_year)
-        )
-      ) {
-        return false;
-      }
-
-      if (searchText) {
-        const combined = [
-          row.movie_title,
-          getBaseMovieTitle(row.movie_title),
-          row.city,
-          row.state,
-          row.release_year,
-        ]
-          .join(" ")
-          .toLowerCase();
-
-        if (
-          !combined.includes(searchText)
-        ) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  }, [
-    data,
-    search,
-    selectedMovies,
-    selectedCities,
-    selectedStates,
-    selectedYears,
-  ]);
-
-  // ============================================================
-  // City data
-  // ============================================================
-
-  const cityData = useMemo(() => {
-    return filteredRawData.map((rawRow) => {
-      const rebuilt =
-        rebuildProgression(rawRow);
-
-      rebuilt.total_gross =
-        rebuilt.movie_total_gross;
-
-      return rebuilt;
-    });
-  }, [
-    filteredRawData,
-    weekColumns,
-    cumulativeColumns,
-  ]);
-
-  // ============================================================
-  // Dubbed / exact-version data
-  // ============================================================
-
-  const dubbedData = useMemo(() => {
-    const groups =
-      new Map<
-        string,
-        MovieData
-      >();
-
-    filteredRawData.forEach((row) => {
-      const key =
-        `${row.movie_title}__${row.release_year}`;
-
-      if (!groups.has(key)) {
-        const initial: MovieData = {
-          movie_title:
-            row.movie_title,
-          city: "",
-          state: "",
-          release_year:
-            Number(
-              row.release_year
-            ),
-          day_1_gross: 0,
-          movie_total_gross: 0,
-        };
-
-        weekColumns.forEach((column) => {
-          initial[column] = 0;
-        });
-
-        groups.set(key, initial);
-      }
-
-      const group =
-        groups.get(key)!;
-
-      group.day_1_gross =
-        Number(
-          group.day_1_gross || 0
-        ) +
-        Number(
-          row.day_1_gross || 0
-        );
-
-      weekColumns.forEach((column) => {
-        group[column] =
-          Number(
-            group[column] || 0
-          ) +
-          Number(
-            row[column] || 0
-          );
-      });
-    });
-
-    return [
-      ...groups.values(),
-    ].map(
-      rebuildProgression
-    );
-  }, [
-    filteredRawData,
-    weekColumns,
-    cumulativeColumns,
-  ]);
-
-  // ============================================================
-  // Movie totals
-  // ============================================================
-
-  const movieTotals = useMemo(() => {
-    const groups =
-      new Map<
-        string,
-        MovieData
-      >();
-
-    dubbedData.forEach(
-      (versionRow) => {
-        const baseTitle =
-          getBaseMovieTitle(
-            versionRow.movie_title
-          );
-
-        const key =
-          `${baseTitle}__${versionRow.release_year}`;
-
-        if (!groups.has(key)) {
-          const initial: MovieData = {
-            movie_title:
-              baseTitle,
-            city: "",
-            state: "",
-            release_year:
-              Number(
-                versionRow.release_year
-              ),
-            day_1_gross: 0,
-            movie_total_gross: 0,
-          };
-
-          weekColumns.forEach((column) => {
-            initial[column] = 0;
-          });
-
-          groups.set(key, initial);
-        }
-
-        const group =
-          groups.get(key)!;
-
-        group.day_1_gross =
-          Number(
-            group.day_1_gross || 0
-          ) +
-          Number(
-            versionRow.day_1_gross || 0
-          );
-
-        weekColumns.forEach((column) => {
-          group[column] =
-            Number(
-              group[column] || 0
-            ) +
-            Number(
-              versionRow[column] || 0
-            );
-        });
-      }
-    );
-
-    return [
-      ...groups.values(),
-    ].map(
-      rebuildProgression
-    );
-  }, [
-    dubbedData,
-    weekColumns,
-    cumulativeColumns,
-  ]);
-
-  // ============================================================
-  // Active dataset
-  // ============================================================
-
-  const activeData =
-    viewMode === "movies"
-      ? movieTotals
-      : viewMode === "dubbed"
-      ? dubbedData
-      : cityData;
-
-  // ============================================================
   // Sort
   // ============================================================
 
-  const sortedData = useMemo(() => {
-    const rows = [...activeData];
-
-    rows.sort((a, b) => {
-      const aValue = a[sortColumn];
-      const bValue = b[sortColumn];
-
-      if (
-        typeof aValue === "string" ||
-        typeof bValue === "string"
-      ) {
-        const first =
-          String(aValue || "");
-
-        const second =
-          String(bValue || "");
-
-        return sortAsc
-          ? first.localeCompare(second)
-          : second.localeCompare(first);
-      }
-
-      const first =
-        Number(aValue || 0);
-
-      const second =
-        Number(bValue || 0);
-
-      return sortAsc
-        ? first - second
-        : second - first;
-    });
-
-    return rows;
-  }, [
-    activeData,
-    sortColumn,
-    sortAsc,
-  ]);
-
-  const handleSort = (column: string) => {
+  const handleSort = (
+    column: string
+  ) => {
     if (sortColumn === column) {
       setSortAsc(
         (old) => !old
@@ -1172,7 +427,9 @@ function App() {
   // Tab change
   // ============================================================
 
-  const changeView = (mode: ViewMode) => {
+  const changeView = (
+    mode: ViewMode
+  ) => {
     setViewMode(mode);
 
     if (mode === "cities") {
@@ -1189,10 +446,10 @@ function App() {
     setPage(1);
   };
 
+  // Reset to page 1 when filters change.
   useEffect(() => {
     setPage(1);
   }, [
-    search,
     selectedMovies,
     selectedCities,
     selectedStates,
@@ -1200,78 +457,52 @@ function App() {
   ]);
 
   // ============================================================
-  // Pagination
-  // ============================================================
-
-  const totalPages =
-    Math.max(
-      1,
-      Math.ceil(
-        sortedData.length /
-          ITEMS_PER_PAGE
-      )
-    );
-
-  const paginatedData =
-    sortedData.slice(
-      (page - 1) *
-        ITEMS_PER_PAGE,
-      page *
-        ITEMS_PER_PAGE
-    );
-
-  // ============================================================
-  // KPI
-  // ============================================================
-
-  const grandMovieTotal =
-    useMemo(
-      () =>
-        movieTotals.reduce(
-          (
-            sum,
-            row
-          ) =>
-            sum +
-            Number(
-              row.movie_total_gross ||
-                0
-            ),
-          0
-        ),
-      [
-        movieTotals,
-      ]
-    );
-
-  // ============================================================
   // Loading/error
   // ============================================================
 
-  if (loading) {
+  if (
+    loading &&
+    rows.length === 0
+  ) {
     return (
       <div className="App">
         <h1>🎬 BoxOfficeTrack</h1>
 
         <div className="spinner" />
 
-        <p style={{ textAlign: "center" }}>
+        <p
+          style={{
+            textAlign: "center",
+          }}
+        >
           Loading box office data...
         </p>
       </div>
     );
   }
 
-  if (error) {
+  if (
+    error &&
+    rows.length === 0
+  ) {
     return (
       <div className="App">
         <h1>🎬 BoxOfficeTrack</h1>
 
-        <p style={{ color: "red" }}>
+        <p
+          style={{
+            color: "red",
+          }}
+        >
           {error}
         </p>
 
-        <button onClick={fetchData}>
+        <button
+          onClick={() => {
+            fetchFilters();
+            fetchData();
+          }}
+        >
           Retry
         </button>
       </div>
@@ -1307,6 +538,7 @@ function App() {
 
         <Select
           isMulti
+          isLoading={filtersLoading}
           options={movies.map(
             (movie) => ({
               value: movie,
@@ -1324,6 +556,7 @@ function App() {
 
         <Select
           isMulti
+          isLoading={filtersLoading}
           options={cities.map(
             (city) => ({
               value: city,
@@ -1341,6 +574,7 @@ function App() {
 
         <Select
           isMulti
+          isLoading={filtersLoading}
           options={states.map(
             (state) => ({
               value: state,
@@ -1358,6 +592,7 @@ function App() {
 
         <Select
           isMulti
+          isLoading={filtersLoading}
           options={years.map(
             (year) => ({
               value: String(year),
@@ -1380,34 +615,46 @@ function App() {
       <div className="kpi-container">
 
         <div className="kpi-card">
-          <h3>Movie Total Gross</h3>
+          <h3>
+            Movie Total Gross
+          </h3>
 
           <p>
-            ₹{toIndianFormat(
-              grandMovieTotal
+            ₹
+            {toIndianFormat(
+              stats.grandMovieTotal
             )}
           </p>
 
           <small>
-            ₹{toCrores(
-              grandMovieTotal
+            ₹
+            {toCrores(
+              stats.grandMovieTotal
             )}
           </small>
         </div>
 
         <div className="kpi-card">
           <h3>Base Movies</h3>
-          <p>{movieTotals.length}</p>
+          <p>
+            {stats.baseMovies}
+          </p>
         </div>
 
         <div className="kpi-card">
           <h3>Versions</h3>
-          <p>{dubbedData.length}</p>
+          <p>
+            {stats.versions}
+          </p>
         </div>
 
         <div className="kpi-card">
-          <h3>Movie × City Records</h3>
-          <p>{cityData.length}</p>
+          <h3>
+            Movie × City Records
+          </h3>
+          <p>
+            {stats.cityRecords}
+          </p>
         </div>
 
       </div>
@@ -1457,13 +704,39 @@ function App() {
 
       </div>
 
-      <h2 style={{ textAlign: "center" }}>
+      <h2
+        style={{
+          textAlign: "center",
+        }}
+      >
         {viewMode === "movies"
           ? "Movie Total Collections"
           : viewMode === "dubbed"
           ? "Movie Version / Dubbed Collections"
           : "Movie × City Collections"}
       </h2>
+
+      {loading && (
+        <p
+          style={{
+            textAlign: "center",
+            opacity: 0.7,
+          }}
+        >
+          Updating results...
+        </p>
+      )}
+
+      {error && (
+        <p
+          style={{
+            color: "red",
+            textAlign: "center",
+          }}
+        >
+          {error}
+        </p>
+      )}
 
       {/* MOVIE TOTALS / DUBBED */}
 
@@ -1556,7 +829,7 @@ function App() {
 
             <tbody>
 
-              {paginatedData.map(
+              {rows.map(
                 (row) => (
                   <tr
                     key={`${row.movie_title}-${row.release_year}`}
@@ -1747,7 +1020,7 @@ function App() {
 
             <tbody>
 
-              {paginatedData.map(
+              {rows.map(
                 (
                   row,
                   index
@@ -1846,12 +1119,13 @@ function App() {
 
       {/* PAGINATION */}
 
-      {totalPages > 1 && (
+      {pagination.totalPages > 1 && (
         <div className="pagination">
 
           <button
             disabled={
-              page === 1
+              page <= 1 ||
+              loading
             }
             onClick={() =>
               setPage(
@@ -1867,22 +1141,24 @@ function App() {
           </button>
 
           <span>
-            Page {page} of{" "}
-            {totalPages}
+            Page {pagination.page} of{" "}
+            {pagination.totalPages}
             {" — "}
-            {sortedData.length} records
+            {pagination.total} records
           </span>
 
           <button
             disabled={
-              page >= totalPages
+              page >=
+                pagination.totalPages ||
+              loading
             }
             onClick={() =>
               setPage(
                 (old) =>
                   Math.min(
                     old + 1,
-                    totalPages
+                    pagination.totalPages
                   )
               )
             }
