@@ -1,19 +1,22 @@
-import { createClient } from "@tursodatabase/serverless";
-
-const client = createClient({
-  url: process.env.TURSO_DATABASE_URL!,
-  authToken: process.env.TURSO_AUTH_TOKEN!,
-});
+import { createClient } from "@tursodatabase/serverless/compat";
 
 export default async () => {
   try {
-    if (!process.env.TURSO_DATABASE_URL) {
+    const url = process.env.TURSO_DATABASE_URL;
+    const authToken = process.env.TURSO_AUTH_TOKEN;
+
+    if (!url) {
       throw new Error("TURSO_DATABASE_URL is not configured");
     }
 
-    if (!process.env.TURSO_AUTH_TOKEN) {
+    if (!authToken) {
       throw new Error("TURSO_AUTH_TOKEN is not configured");
     }
+
+    const client = createClient({
+      url,
+      authToken,
+    });
 
     const result = await client.execute(`
       SELECT *
@@ -45,7 +48,7 @@ export default async () => {
       }
     );
   } catch (error) {
-    console.error("Turso query failed:", error);
+    console.error("BOXOFFICE_FUNCTION_ERROR:", error);
 
     return new Response(
       JSON.stringify({
