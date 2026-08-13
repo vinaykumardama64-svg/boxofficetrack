@@ -539,7 +539,7 @@ function App() {
   ) {
     return (
       <div className="App">
-        <h1>🎬 BoxOfficeTrack</h1>
+        <h1>🎬 TrackBoxOffice</h1>
 
         <div className="spinner" />
 
