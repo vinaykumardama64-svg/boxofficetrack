@@ -61,11 +61,13 @@ function App() {
   const [movies, setMovies] = useState<string[]>([]);
   const [cities, setCities] = useState<string[]>([]);
   const [states, setStates] = useState<string[]>([]);
+  const [languages, setLanguages] = useState<string[]>([]);
   const [years, setYears] = useState<number[]>([]);
 
   const [selectedMovies, setSelectedMovies] = useState<SelectOption[]>([]);
   const [selectedCities, setSelectedCities] = useState<SelectOption[]>([]);
   const [selectedStates, setSelectedStates] = useState<SelectOption[]>([]);
+  const [selectedLanguages, setSelectedLanguages] = useState<SelectOption[]>([]);
   const [selectedYears, setSelectedYears] = useState<SelectOption[]>([]);
 
   const [page, setPage] = useState(1);
@@ -142,6 +144,7 @@ function App() {
       setMovies(result.movies || []);
       setCities(result.cities || []);
       setStates(result.states || []);
+      setLanguages(result.languages || []);
       setYears(result.years || []);
     } catch (err) {
       console.error(err);
@@ -206,6 +209,17 @@ function App() {
       params.set(
         "states",
         selectedStates
+          .map((item) =>
+            encodeURIComponent(item.value)
+          )
+          .join("|")
+      );
+    }
+
+    if (selectedLanguages.length > 0) {
+      params.set(
+        "languages",
+        selectedLanguages
           .map((item) =>
             encodeURIComponent(item.value)
           )
@@ -352,6 +366,7 @@ function App() {
     selectedMovies,
     selectedCities,
     selectedStates,
+    selectedLanguages,
     selectedYears,
   ]);
 
@@ -396,6 +411,10 @@ function App() {
 
     if (column === "state") {
       return "State";
+    }
+
+    if (column === "language") {
+      return "Language";
     }
 
     if (column === "release_year") {
@@ -453,7 +472,8 @@ function App() {
       if (
         column === "movie_title" ||
         column === "city" ||
-        column === "state"
+        column === "state" ||
+        column === "language"
       ) {
         setSortAsc(true);
       } else {
@@ -505,6 +525,7 @@ function App() {
     selectedMovies,
     selectedCities,
     selectedStates,
+    selectedLanguages,
     selectedYears,
   ]);
 
@@ -640,6 +661,24 @@ function App() {
             )
           }
           placeholder="Select State(s)"
+        />
+
+        <Select
+          isMulti
+          isLoading={filtersLoading}
+          options={languages.map(
+            (language) => ({
+              value: language,
+              label: language,
+            })
+          )}
+          value={selectedLanguages}
+          onChange={(value) =>
+            setSelectedLanguages(
+              value as SelectOption[]
+            )
+          }
+          placeholder="Select Language(s)"
         />
 
         <Select
