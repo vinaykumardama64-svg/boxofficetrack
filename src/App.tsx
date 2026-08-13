@@ -449,7 +449,7 @@ function App() {
         .replaceAll("_", " ")
         .toUpperCase();
 
-      return `Cume ${label}`;
+      return `Total ${label}`;
     }
 
     return column;
