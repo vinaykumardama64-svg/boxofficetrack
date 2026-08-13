@@ -103,7 +103,7 @@ function App() {
     const timer = window.setTimeout(() => {
       setDebouncedSearch(search.trim());
       setPage(1);
-    }, 300);
+    }, 700);
 
     return () => {
       window.clearTimeout(timer);
@@ -227,11 +227,8 @@ function App() {
       setLoading(true);
       setError("");
 
-      // Clear rows from the previous request immediately so that
-      // City Breakdown rows are never rendered inside Movie Totals
-      // (or vice versa) while the new tab request is loading.
-      setRows([]);
-
+      // Keep current rows visible during search/filter refreshes.
+      // Tab switches clear rows separately inside changeView().
       const response = await fetch(
         buildDataUrl(),
         {
