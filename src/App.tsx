@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import Select from "react-select";
 
@@ -43,6 +43,15 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [filtersLoading, setFiltersLoading] = useState(true);
   const [error, setError] = useState("");
+
+  // Full-screen loader is used only for the very first successful load.
+  // Search/filter refreshes keep the current table visible.
+  const hasLoadedOnce = useRef(false);
+
+  // Cancel older search/filter requests when a newer request starts.
+  // This prevents slow responses for "r" from overwriting newer results
+  // for "ra", "ram", etc.
+  const activeRequest = useRef<AbortController | null>(null);
 
   const [viewMode, setViewMode] = useState<ViewMode>("movies");
 
@@ -223,16 +232,21 @@ function App() {
   // ============================================================
 
   const fetchData = async () => {
+    // Cancel the previous in-flight request before starting a new one.
+    activeRequest.current?.abort();
+
+    const controller = new AbortController();
+    activeRequest.current = controller;
+
     try {
       setLoading(true);
       setError("");
 
-      // Keep current rows visible during search/filter refreshes.
-      // Tab switches clear rows separately inside changeView().
       const response = await fetch(
         buildDataUrl(),
         {
           cache: "no-store",
+          signal: controller.signal,
         }
       );
 
@@ -243,6 +257,11 @@ function App() {
       }
 
       const result = await response.json();
+
+      // Ignore a response if a newer request has already replaced it.
+      if (controller.signal.aborted) {
+        return;
+      }
 
       setRows(
         Array.isArray(result.data)
@@ -292,7 +311,17 @@ function App() {
           result.weekColumns
         );
       }
+
+      hasLoadedOnce.current = true;
     } catch (err) {
+      // Aborted requests are expected while typing/filtering.
+      if (
+        err instanceof DOMException &&
+        err.name === "AbortError"
+      ) {
+        return;
+      }
+
       console.error(err);
 
       setError(
@@ -301,12 +330,19 @@ function App() {
           : "Could not load box office data."
       );
     } finally {
-      setLoading(false);
+      // Only the currently active request is allowed to switch loading off.
+      if (activeRequest.current === controller) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
     fetchData();
+
+    return () => {
+      activeRequest.current?.abort();
+    };
   }, [
     viewMode,
     page,
@@ -478,7 +514,7 @@ function App() {
 
   if (
     loading &&
-    rows.length === 0
+    !hasLoadedOnce.current
   ) {
     return (
       <div className="App">
@@ -499,7 +535,7 @@ function App() {
 
   if (
     error &&
-    rows.length === 0
+    !hasLoadedOnce.current
   ) {
     return (
       <div className="App">
