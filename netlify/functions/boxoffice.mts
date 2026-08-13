@@ -166,7 +166,6 @@ const FILMINFO_CITY_STATE_MAP: Record<string, string> = {
   BHIMAVARAM: "Andhra Pradesh",
   ELURU: "Andhra Pradesh",
   ONGOLE: "Andhra Pradesh",
-MACHILIPATNAM: "Andhra Pradesh",
 
   BHUBANESWAR: "Odisha",
   BHUBANESHWAR: "Odisha",
@@ -248,6 +247,105 @@ function getBaseMovieTitle(title: unknown): string {
   return base;
 }
 
+
+const LANGUAGE_MARKERS: Array<[RegExp, string]> = [
+  [/\btelugu\b/i, "Telugu"],
+  [/\btamil\b/i, "Tamil"],
+  [/\bkannada\b/i, "Kannada"],
+  [/\bmalayalam\b/i, "Malayalam"],
+  [/\bmarathi\b/i, "Marathi"],
+  [/\bbengali\b/i, "Bengali"],
+  [/\bpunjabi\b/i, "Punjabi"],
+  [/\bodia\b/i, "Odia"],
+  [/\bbhojpuri\b/i, "Bhojpuri"],
+  [/\bgujarati\b/i, "Gujarati"],
+  [/\benglish\b/i, "English"],
+];
+
+function getParentheticalParts(title: unknown): string[] {
+  return [...String(title || "").matchAll(/\(([^()]*)\)/g)]
+    .map((m) => String(m[1] || "").trim())
+    .filter(Boolean);
+}
+
+function getExplicitLanguageFromTitle(title: unknown): string | null {
+  const parts = getParentheticalParts(title);
+
+  for (const part of parts) {
+    for (const [pattern, language] of LANGUAGE_MARKERS) {
+      if (pattern.test(part)) {
+        return language;
+      }
+    }
+  }
+
+  return null;
+}
+
+function isGenericHindiDubbedTitle(title: unknown): boolean {
+  const parts = getParentheticalParts(title);
+
+  return parts.some((part) => {
+    const lower = part
+      .toLowerCase()
+      .replace(/\./g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (!lower.includes("dubbed")) {
+      return false;
+    }
+
+    // A language-specific dubbed version is handled by the explicit
+    // language rule above. Generic "(Dubbed)" means Hindi dubbed.
+    return !LANGUAGE_MARKERS.some(([pattern]) => pattern.test(part));
+  });
+}
+
+function buildGenericDubbedBaseSet(titles: string[]): Set<string> {
+  const bases = new Set<string>();
+
+  for (const title of titles) {
+    if (isGenericHindiDubbedTitle(title)) {
+      bases.add(
+        getBaseMovieTitle(title)
+          .toLowerCase()
+          .trim()
+      );
+    }
+  }
+
+  return bases;
+}
+
+function getLanguageFromTitle(
+  title: unknown,
+  genericDubbedBases: Set<string>
+): string {
+  const explicit = getExplicitLanguageFromTitle(title);
+
+  if (explicit) {
+    return explicit;
+  }
+
+  // FilmInformation generic "(Dubbed)" = Hindi dubbed.
+  if (isGenericHindiDubbedTitle(title)) {
+    return "Hindi";
+  }
+
+  const base = getBaseMovieTitle(title)
+    .toLowerCase()
+    .trim();
+
+  // Plain title + same base has generic "(Dubbed)" version => English original.
+  if (genericDubbedBases.has(base)) {
+    return "English";
+  }
+
+  // Plain titles without a generic Hindi-dubbed sibling are treated as Hindi.
+  return "Hindi";
+}
+
 function safeNumber(value: unknown): number {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -274,7 +372,7 @@ function json(data: any, status = 200): Response {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "no-store",
+      "Cache-Control": "public, max-age=120",
     },
   });
 }
@@ -398,6 +496,7 @@ export default async (request: Request) => {
     const selectedMovies = parseCsvParam(requestUrl, "movies");
     const selectedCities = parseCsvParam(requestUrl, "cities");
     const selectedStates = parseCsvParam(requestUrl, "states");
+    const selectedLanguages = parseCsvParam(requestUrl, "languages");
     const selectedYears = parseCsvParam(requestUrl, "years").map(Number);
 
     const pragmaRows = await db.prepare(
@@ -444,6 +543,14 @@ export default async (request: Request) => {
         return a.localeCompare(b);
       });
 
+      const genericDubbedBases = buildGenericDubbedBaseSet(movies);
+
+      const languages = uniqueSorted(
+        movies.map((title) =>
+          getLanguageFromTitle(title, genericDubbedBases)
+        )
+      );
+
       const years = [
         ...new Set(
           dataRows
@@ -456,6 +563,7 @@ export default async (request: Request) => {
         movies,
         cities,
         states,
+        languages,
         years,
       });
     }
@@ -465,6 +573,19 @@ export default async (request: Request) => {
     // Movie/state are translated to exact movie/city values first.
     // ========================================================
 
+    const allTitleRows = await db.prepare(`
+      SELECT DISTINCT movie_title
+      FROM "${TABLE}"
+    `).all();
+
+    const allMovieTitles = (allTitleRows as any[])
+      .map((r) => String(r.movie_title ?? ""))
+      .filter(Boolean);
+
+    const genericDubbedBases = buildGenericDubbedBaseSet(
+      allMovieTitles
+    );
+
     let allowedMovieTitles: string[] = [];
 
     if (selectedMovies.length > 0) {
@@ -472,16 +593,23 @@ export default async (request: Request) => {
         selectedMovies.map((m) => getBaseMovieTitle(m).toLowerCase())
       );
 
-      const titleRows = await db.prepare(`
-        SELECT DISTINCT movie_title
-        FROM "${TABLE}"
-      `).all();
-
-      allowedMovieTitles = (titleRows as any[])
-        .map((r) => String(r.movie_title ?? ""))
+      allowedMovieTitles = allMovieTitles
         .filter((title) =>
           wantedBases.has(getBaseMovieTitle(title).toLowerCase())
         );
+    }
+
+    let allowedLanguageTitles: string[] = [];
+
+    if (selectedLanguages.length > 0) {
+      allowedLanguageTitles = allMovieTitles.filter((title) =>
+        selectedLanguages.includes(
+          getLanguageFromTitle(
+            title,
+            genericDubbedBases
+          )
+        )
+      );
     }
 
     let allowedStateCities: string[] = [];
@@ -506,6 +634,15 @@ export default async (request: Request) => {
       );
       params.push(...allowedMovieTitles);
     } else if (selectedMovies.length > 0) {
+      whereParts.push("1 = 0");
+    }
+
+    if (allowedLanguageTitles.length > 0) {
+      whereParts.push(
+        `"movie_title" IN (${allowedLanguageTitles.map(() => "?").join(",")})`
+      );
+      params.push(...allowedLanguageTitles);
+    } else if (selectedLanguages.length > 0) {
       whereParts.push("1 = 0");
     }
 
@@ -566,6 +703,10 @@ export default async (request: Request) => {
           release_year: Number(row.release_year ?? 0),
           city: "",
           state: "",
+          language: getLanguageFromTitle(
+            String(row.movie_title ?? ""),
+            genericDubbedBases
+          ),
         },
         weekColumns
       )
@@ -576,6 +717,7 @@ export default async (request: Request) => {
         const combined = [
           row.movie_title,
           getBaseMovieTitle(row.movie_title),
+          row.language,
           row.release_year,
         ]
           .join(" ")
@@ -602,6 +744,10 @@ export default async (request: Request) => {
           movie_title: baseTitle,
           city: "",
           state: "",
+          language:
+            selectedLanguages.length === 1
+              ? selectedLanguages[0]
+              : "",
           release_year: row.release_year,
           day_1_gross: 0,
         };
@@ -847,6 +993,10 @@ export default async (request: Request) => {
             movie_title: String(row.movie_title ?? ""),
             city: String(row.city ?? ""),
             state: String(row.state ?? getStateFromCity(row.city)),
+            language: getLanguageFromTitle(
+              String(row.movie_title ?? ""),
+              genericDubbedBases
+            ),
             release_year: Number(row.release_year ?? 0),
           },
           weekColumns
