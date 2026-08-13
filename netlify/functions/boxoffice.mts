@@ -166,6 +166,7 @@ const FILMINFO_CITY_STATE_MAP: Record<string, string> = {
   BHIMAVARAM: "Andhra Pradesh",
   ELURU: "Andhra Pradesh",
   ONGOLE: "Andhra Pradesh",
+MACHILIPATNAM: "Andhra Pradesh",
 
   BHUBANESWAR: "Odisha",
   BHUBANESHWAR: "Odisha",
