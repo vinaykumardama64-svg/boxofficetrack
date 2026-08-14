@@ -62,12 +62,14 @@ function App() {
   const [cities, setCities] = useState<string[]>([]);
   const [states, setStates] = useState<string[]>([]);
   const [languages, setLanguages] = useState<string[]>([]);
+  const [versionTypes, setVersionTypes] = useState<string[]>([]);
   const [years, setYears] = useState<number[]>([]);
 
   const [selectedMovies, setSelectedMovies] = useState<SelectOption[]>([]);
   const [selectedCities, setSelectedCities] = useState<SelectOption[]>([]);
   const [selectedStates, setSelectedStates] = useState<SelectOption[]>([]);
   const [selectedLanguages, setSelectedLanguages] = useState<SelectOption[]>([]);
+  const [selectedVersionTypes, setSelectedVersionTypes] = useState<SelectOption[]>([]);
   const [selectedYears, setSelectedYears] = useState<SelectOption[]>([]);
 
   const [page, setPage] = useState(1);
@@ -130,7 +132,10 @@ function App() {
       setFiltersLoading(true);
 
       const response = await fetch(
-        `${API_URL}?view=filters`
+        `${API_URL}?view=filters`,
+        {
+          cache: "no-store",
+        }
       );
 
       if (!response.ok) {
@@ -145,6 +150,7 @@ function App() {
       setCities(result.cities || []);
       setStates(result.states || []);
       setLanguages(result.languages || []);
+      setVersionTypes(result.versionTypes || []);
       setYears(result.years || []);
     } catch (err) {
       console.error(err);
@@ -220,6 +226,17 @@ function App() {
       params.set(
         "languages",
         selectedLanguages
+          .map((item) =>
+            encodeURIComponent(item.value)
+          )
+          .join("|")
+      );
+    }
+
+    if (selectedVersionTypes.length > 0) {
+      params.set(
+        "version_types",
+        selectedVersionTypes
           .map((item) =>
             encodeURIComponent(item.value)
           )
@@ -367,6 +384,7 @@ function App() {
     selectedCities,
     selectedStates,
     selectedLanguages,
+    selectedVersionTypes,
     selectedYears,
   ]);
 
@@ -415,6 +433,10 @@ function App() {
 
     if (column === "language") {
       return "Language";
+    }
+
+    if (column === "version_type") {
+      return "Version Type";
     }
 
     if (column === "release_year") {
@@ -473,7 +495,8 @@ function App() {
         column === "movie_title" ||
         column === "city" ||
         column === "state" ||
-        column === "language"
+        column === "language" ||
+        column === "version_type"
       ) {
         setSortAsc(true);
       } else {
@@ -526,6 +549,7 @@ function App() {
     selectedCities,
     selectedStates,
     selectedLanguages,
+    selectedVersionTypes,
     selectedYears,
   ]);
 
@@ -539,7 +563,7 @@ function App() {
   ) {
     return (
       <div className="App">
-        <h1>🎬 TrackBoxOffice</h1>
+        <h1>🎬 BoxOfficeTrack</h1>
 
         <div className="spinner" />
 
@@ -596,7 +620,7 @@ function App() {
       <input
         type="text"
         className="search-input"
-        placeholder="Search movie / city / state / release year..."
+        placeholder="Search movie / city / state / language / release year..."
         value={search}
         onChange={(e) =>
           setSearch(
@@ -679,6 +703,24 @@ function App() {
             )
           }
           placeholder="Select Language(s)"
+        />
+
+        <Select
+          isMulti
+          isLoading={filtersLoading}
+          options={versionTypes.map(
+            (versionType) => ({
+              value: versionType,
+              label: versionType,
+            })
+          )}
+          value={selectedVersionTypes}
+          onChange={(value) =>
+            setSelectedVersionTypes(
+              value as SelectOption[]
+            )
+          }
+          placeholder="Select Version Type(s)"
         />
 
         <Select
