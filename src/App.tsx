@@ -702,7 +702,7 @@ function App() {
               value as SelectOption[]
             )
           }
-          placeholder="Select Language(s)"
+          placeholder="Select Original Language(s)"
         />
 
         <Select
