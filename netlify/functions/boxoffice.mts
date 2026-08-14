@@ -346,6 +346,53 @@ function getLanguageFromTitle(
   return "Hindi";
 }
 
+function getVersionTypeFromTitle(title: unknown): string {
+  const parts = getParentheticalParts(title);
+
+  if (parts.length === 0) {
+    return "Original";
+  }
+
+  // The version qualifier is normally the last bracketed part.
+  // Normalize the known FilmInformation language/dubbed patterns so
+  // the dropdown does not get duplicate casing/spelling variants.
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i]
+      .replace(/\./g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const explicitLanguage = getExplicitLanguageFromTitle(`(${part})`);
+    const hasDubbed = /\bdubbed\b/i.test(part);
+
+    if (explicitLanguage) {
+      return hasDubbed
+        ? `${explicitLanguage} Dubbed`
+        : explicitLanguage;
+    }
+
+    if (hasDubbed) {
+      // Generic (Dubbed) = Hindi dubbed in FilmInformation.
+      return "Dubbed";
+    }
+
+    if (/\brevived\b/i.test(part)) {
+      return "Revived";
+    }
+
+    if (/\bre[\s-]?release\b/i.test(part) || /^r\s*r$/i.test(part)) {
+      return "Re-Release";
+    }
+
+    // Keep any other bracket text available as a filter as requested.
+    if (part) {
+      return part;
+    }
+  }
+
+  return "Original";
+}
+
 function safeNumber(value: unknown): number {
   const n = Number(value ?? 0);
   return Number.isFinite(n) ? n : 0;
@@ -372,7 +419,7 @@ function json(data: any, status = 200): Response {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=120",
+      "Cache-Control": "no-store",
     },
   });
 }
@@ -497,6 +544,7 @@ export default async (request: Request) => {
     const selectedCities = parseCsvParam(requestUrl, "cities");
     const selectedStates = parseCsvParam(requestUrl, "states");
     const selectedLanguages = parseCsvParam(requestUrl, "languages");
+    const selectedVersionTypes = parseCsvParam(requestUrl, "version_types");
     const selectedYears = parseCsvParam(requestUrl, "years").map(Number);
 
     const pragmaRows = await db.prepare(
@@ -551,6 +599,12 @@ export default async (request: Request) => {
         )
       );
 
+      const versionTypes = uniqueSorted(
+        movies.map((title) =>
+          getVersionTypeFromTitle(title)
+        )
+      );
+
       const years = [
         ...new Set(
           dataRows
@@ -564,6 +618,7 @@ export default async (request: Request) => {
         cities,
         states,
         languages,
+        versionTypes,
         years,
       });
     }
@@ -612,6 +667,16 @@ export default async (request: Request) => {
       );
     }
 
+    let allowedVersionTypeTitles: string[] = [];
+
+    if (selectedVersionTypes.length > 0) {
+      allowedVersionTypeTitles = allMovieTitles.filter((title) =>
+        selectedVersionTypes.includes(
+          getVersionTypeFromTitle(title)
+        )
+      );
+    }
+
     let allowedStateCities: string[] = [];
 
     if (selectedStates.length > 0) {
@@ -643,6 +708,15 @@ export default async (request: Request) => {
       );
       params.push(...allowedLanguageTitles);
     } else if (selectedLanguages.length > 0) {
+      whereParts.push("1 = 0");
+    }
+
+    if (allowedVersionTypeTitles.length > 0) {
+      whereParts.push(
+        `"movie_title" IN (${allowedVersionTypeTitles.map(() => "?").join(",")})`
+      );
+      params.push(...allowedVersionTypeTitles);
+    } else if (selectedVersionTypes.length > 0) {
       whereParts.push("1 = 0");
     }
 
@@ -707,6 +781,9 @@ export default async (request: Request) => {
             String(row.movie_title ?? ""),
             genericDubbedBases
           ),
+          version_type: getVersionTypeFromTitle(
+            String(row.movie_title ?? "")
+          ),
         },
         weekColumns
       )
@@ -718,6 +795,7 @@ export default async (request: Request) => {
           row.movie_title,
           getBaseMovieTitle(row.movie_title),
           row.language,
+          row.version_type,
           row.release_year,
         ]
           .join(" ")
@@ -996,6 +1074,9 @@ export default async (request: Request) => {
             language: getLanguageFromTitle(
               String(row.movie_title ?? ""),
               genericDubbedBases
+            ),
+            version_type: getVersionTypeFromTitle(
+              String(row.movie_title ?? "")
             ),
             release_year: Number(row.release_year ?? 0),
           },
