@@ -318,32 +318,124 @@ function buildGenericDubbedBaseSet(titles: string[]): Set<string> {
   return bases;
 }
 
-function getLanguageFromTitle(
+function buildOriginalLanguageByBase(
+  titles: string[]
+): Map<string, string> {
+  const grouped = new Map<string, string[]>();
+
+  for (const title of titles) {
+    const baseKey = getBaseMovieTitle(title)
+      .toLowerCase()
+      .trim();
+
+    if (!grouped.has(baseKey)) {
+      grouped.set(baseKey, []);
+    }
+
+    grouped.get(baseKey)!.push(title);
+  }
+
+  const result = new Map<string, string>();
+
+  for (const [baseKey, groupTitles] of grouped.entries()) {
+    // ------------------------------------------------------
+    // 1. Regional originals explicitly carry their language:
+    //    Movie (Telugu)
+    //    Movie (Tamil)
+    //    Movie (Kannada)
+    //    etc.
+    //
+    // A "(Telugu Dubbed)" title is NOT an original-language
+    // marker; it is only a dubbed target/version.
+    // ------------------------------------------------------
+    let explicitOriginalLanguage: string | null = null;
+
+    for (const title of groupTitles) {
+      const parts = getParentheticalParts(title);
+
+      for (const part of parts) {
+        if (/\bdubbed\b/i.test(part)) {
+          continue;
+        }
+
+        for (const [pattern, language] of LANGUAGE_MARKERS) {
+          if (pattern.test(part)) {
+            explicitOriginalLanguage = language;
+            break;
+          }
+        }
+
+        if (explicitOriginalLanguage) {
+          break;
+        }
+      }
+
+      if (explicitOriginalLanguage) {
+        break;
+      }
+    }
+
+    if (explicitOriginalLanguage) {
+      result.set(baseKey, explicitOriginalLanguage);
+      continue;
+    }
+
+    // ------------------------------------------------------
+    // 2. Plain-title original:
+    //
+    // English:
+    //   Avatar
+    //   Avatar (Dubbed)          -> Hindi dubbed
+    //   Avatar (Telugu Dubbed)
+    //
+    // Hindi:
+    //   Dhurandhar
+    //   Dhurandhar (Telugu Dubbed)
+    //   Dhurandhar (Tamil Dubbed)
+    //
+    // Therefore:
+    //   plain title + generic "(Dubbed)" sibling => English
+    //   plain title without generic "(Dubbed)"   => Hindi
+    // ------------------------------------------------------
+    const hasPlainOriginal = groupTitles.some((title) => {
+      return (
+        title.trim().toLowerCase() ===
+        getBaseMovieTitle(title).trim().toLowerCase()
+      );
+    });
+
+    const hasGenericHindiDubbed = groupTitles.some((title) =>
+      isGenericHindiDubbedTitle(title)
+    );
+
+    if (hasPlainOriginal && hasGenericHindiDubbed) {
+      result.set(baseKey, "English");
+      continue;
+    }
+
+    if (hasPlainOriginal) {
+      result.set(baseKey, "Hindi");
+      continue;
+    }
+
+    // Fallback for an incomplete historical group where the original
+    // title itself is absent. Most such unmarked originals in this
+    // dataset are Hindi, so keep them filterable rather than Unknown.
+    result.set(baseKey, "Hindi");
+  }
+
+  return result;
+}
+
+function getOriginalLanguageFromTitle(
   title: unknown,
-  genericDubbedBases: Set<string>
+  originalLanguageByBase: Map<string, string>
 ): string {
-  const explicit = getExplicitLanguageFromTitle(title);
-
-  if (explicit) {
-    return explicit;
-  }
-
-  // FilmInformation generic "(Dubbed)" = Hindi dubbed.
-  if (isGenericHindiDubbedTitle(title)) {
-    return "Hindi";
-  }
-
-  const base = getBaseMovieTitle(title)
+  const baseKey = getBaseMovieTitle(title)
     .toLowerCase()
     .trim();
 
-  // Plain title + same base has generic "(Dubbed)" version => English original.
-  if (genericDubbedBases.has(base)) {
-    return "English";
-  }
-
-  // Plain titles without a generic Hindi-dubbed sibling are treated as Hindi.
-  return "Hindi";
+  return originalLanguageByBase.get(baseKey) || "Hindi";
 }
 
 function getVersionTypeFromTitle(title: unknown): string {
@@ -591,12 +683,11 @@ export default async (request: Request) => {
         return a.localeCompare(b);
       });
 
-      const genericDubbedBases = buildGenericDubbedBaseSet(movies);
+      const originalLanguageByBase =
+        buildOriginalLanguageByBase(movies);
 
       const languages = uniqueSorted(
-        movies.map((title) =>
-          getLanguageFromTitle(title, genericDubbedBases)
-        )
+        [...originalLanguageByBase.values()]
       );
 
       const versionTypes = uniqueSorted(
@@ -637,9 +728,10 @@ export default async (request: Request) => {
       .map((r) => String(r.movie_title ?? ""))
       .filter(Boolean);
 
-    const genericDubbedBases = buildGenericDubbedBaseSet(
-      allMovieTitles
-    );
+    const originalLanguageByBase =
+      buildOriginalLanguageByBase(
+        allMovieTitles
+      );
 
     let allowedMovieTitles: string[] = [];
 
@@ -659,9 +751,9 @@ export default async (request: Request) => {
     if (selectedLanguages.length > 0) {
       allowedLanguageTitles = allMovieTitles.filter((title) =>
         selectedLanguages.includes(
-          getLanguageFromTitle(
+          getOriginalLanguageFromTitle(
             title,
-            genericDubbedBases
+            originalLanguageByBase
           )
         )
       );
@@ -777,9 +869,9 @@ export default async (request: Request) => {
           release_year: Number(row.release_year ?? 0),
           city: "",
           state: "",
-          language: getLanguageFromTitle(
+          language: getOriginalLanguageFromTitle(
             String(row.movie_title ?? ""),
-            genericDubbedBases
+            originalLanguageByBase
           ),
           version_type: getVersionTypeFromTitle(
             String(row.movie_title ?? "")
@@ -1071,9 +1163,9 @@ export default async (request: Request) => {
             movie_title: String(row.movie_title ?? ""),
             city: String(row.city ?? ""),
             state: String(row.state ?? getStateFromCity(row.city)),
-            language: getLanguageFromTitle(
+            language: getOriginalLanguageFromTitle(
               String(row.movie_title ?? ""),
-              genericDubbedBases
+              originalLanguageByBase
             ),
             version_type: getVersionTypeFromTitle(
               String(row.movie_title ?? "")
